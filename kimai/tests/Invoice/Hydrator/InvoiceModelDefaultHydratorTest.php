@@ -1,0 +1,139 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Invoice\Hydrator;
+
+use App\Invoice\Hydrator\InvoiceModelDefaultHydrator;
+use App\Tests\Invoice\Renderer\RendererTestTrait;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
+use ReflectionObject;
+
+#[CoversClass(InvoiceModelDefaultHydrator::class)]
+class InvoiceModelDefaultHydratorTest extends TestCase
+{
+    use RendererTestTrait;
+
+    public function testHydrate(): void
+    {
+        $model = $this->getInvoiceModel();
+
+        $sut = new InvoiceModelDefaultHydrator();
+
+        $result = $sut->hydrate($model);
+        $this->assertModelStructure($result);
+        self::assertSame(
+            $model->getFormatter()->getFormattedDateTime($model->getInvoicePeriod()->getStart()),
+            $result['invoice.first']
+        );
+        self::assertSame(
+            $model->getInvoicePeriod()->getStart()->format('Y-m-d H:i:s'),
+            $result['invoice.first_process']
+        );
+        // the _process fields must use the 24-hour format (H, not h), otherwise
+        // an afternoon time like 18:00 would be rendered as an ambiguous "06:00:00"
+        self::assertSame('2020-08-12 18:00:00', $result['invoice.first_process']);
+        self::assertSame(
+            $model->getFormatter()->getFormattedDateTime($model->getInvoicePeriod()->getEnd()),
+            $result['invoice.last']
+        );
+        self::assertSame(
+            $model->getInvoicePeriod()->getEnd()->format('Y-m-d H:i:s'),
+            $result['invoice.last_process']
+        );
+        self::assertSame('2021-03-12 12:17:40', $result['invoice.last_process']);
+    }
+
+    public function testHydrateThrowsOnMissing(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('InvoiceModel needs a calculator');
+
+        $model = $this->getInvoiceModel();
+
+        $obj = new ReflectionObject($model);
+        $prop = $obj->getProperty('calculator');
+        $prop->setAccessible(true);
+        $prop->setValue($model, null);
+
+        $sut = new InvoiceModelDefaultHydrator();
+
+        $sut->hydrate($model);
+    }
+
+    protected function assertModelStructure(array $model, bool $hasProject = true): void
+    {
+        $keys = [
+            'invoice.due_date',
+            'invoice.due_date_process',
+            'invoice.date',
+            'invoice.date_process',
+            'invoice.number',
+            'invoice.currency',
+            'invoice.currency_symbol',
+            'invoice.vat',
+            'invoice.language',
+            'invoice.tax',
+            'invoice.tax_hide',
+            'invoice.tax_nc',
+            'invoice.tax_plain',
+            'invoice.tax_rows',
+            'invoice.total_time',
+            'invoice.duration_decimal',
+            'invoice.first',
+            'invoice.first_month',
+            'invoice.first_year',
+            'invoice.first_process',
+            'invoice.last',
+            'invoice.last_month',
+            'invoice.last_year',
+            'invoice.last_process',
+            'invoice.total',
+            'invoice.total_nc',
+            'invoice.total_plain',
+            'invoice.subtotal',
+            'invoice.subtotal_nc',
+            'invoice.subtotal_plain',
+            'template.name',
+            'template.company',
+            'template.country',
+            'template.country_name',
+            'template.address',
+            'template.title',
+            'template.payment_terms',
+            'template.due_days',
+            'template.vat_id',
+            'template.contact',
+            'template.payment_details',
+            'query.day',
+            'query.month',
+            'query.month_number',
+            'query.year',
+            'query.begin',
+            'query.begin_process',
+            'query.begin_day',
+            'query.begin_month',
+            'query.begin_month_number',
+            'query.begin_year',
+            'query.end',
+            'query.end_process',
+            'query.end_day',
+            'query.end_month',
+            'query.end_month_number',
+            'query.end_year',
+            'user.see_others',
+        ];
+
+        $givenKeys = array_keys($model);
+        sort($keys);
+        sort($givenKeys);
+
+        self::assertEquals($keys, $givenKeys);
+    }
+}

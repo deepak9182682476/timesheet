@@ -1,0 +1,98 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Twig;
+
+use App\Configuration\SystemConfiguration;
+use App\Twig\Context;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
+
+#[CoversClass(Context::class)]
+#[CoversClass(SystemConfiguration::class)]
+class ContextTest extends TestCase
+{
+    protected function getSut(array $settings, array $headers = []): Context
+    {
+        $stack = new RequestStack();
+        $request = new Request();
+        foreach ($headers as $name => $value) {
+            $request->headers->set($name, $value);
+        }
+        $stack->push($request);
+
+        return new Context($stack);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function getDefaultSettings(): array
+    {
+        return [
+            'show_about' => true,
+            'chart' => [
+                'background_color' => 'rgba(0,115,183,0.7)',
+                'border_color' => '#3b8bba',
+                'grid_color' => 'rgba(0,0,0,.05)',
+                'height' => '200'
+            ],
+            'branding' => [
+                'logo' => 'Logooooo',
+                'mini' => 'Mini2',
+                'company' => 'Super Kimai',
+                'title' => null,
+            ],
+        ];
+    }
+
+    public function testIsModalRequest(): void
+    {
+        $sut = $this->getSut($this->getDefaultSettings());
+        self::assertFalse($sut->isModalRequest());
+
+        $sut = $this->getSut($this->getDefaultSettings(), ['X-Requested-With' => 'XMLHttpRequest']);
+        self::assertTrue($sut->isModalRequest());
+
+        $sut = $this->getSut($this->getDefaultSettings(), ['X-Requested-With' => 'Kimai-Modal']);
+        self::assertTrue($sut->isModalRequest());
+    }
+
+    public function testIsJavascriptRequest(): void
+    {
+        $sut = $this->getSut($this->getDefaultSettings());
+        self::assertFalse($sut->isJavascriptRequest());
+
+        $sut = $this->getSut($this->getDefaultSettings(), ['X-Requested-With' => 'XMLHttpRequest']);
+        self::assertTrue($sut->isJavascriptRequest());
+
+        $sut = $this->getSut($this->getDefaultSettings(), ['X-Requested-With' => 'Kimai']);
+        self::assertTrue($sut->isJavascriptRequest());
+    }
+
+    public function testDeprecatedGetBrandingAlwaysReturnsNull(): void
+    {
+        $sut = $this->getSut($this->getDefaultSettings());
+
+        $previousHandler = set_error_handler(static function (int $type, string $message): true {
+            self::assertSame(E_USER_DEPRECATED, $type);
+            self::assertSame('Use config() instead of "kimai_context" to access system configurations', $message);
+
+            return true;
+        });
+
+        try {
+            self::assertNull($sut->getBranding('legacyAccess'));
+        } finally {
+            restore_error_handler();
+        }
+    }
+}

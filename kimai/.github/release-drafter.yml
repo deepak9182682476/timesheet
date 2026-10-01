@@ -1,0 +1,46 @@
+name-template: '$RESOLVED_VERSION'
+tag-template: '$RESOLVED_VERSION'
+exclude-labels:
+    - 'duplicate'
+    - 'invalid'
+    - 'wontfix'
+    - 'infrastructure'
+exclude-contributors:
+    - 'dependabot'
+    - 'weblate'
+    - 'renovate-bot'
+change-template: '- $TITLE (#$NUMBER)'
+change-title-escapes: '\<*_&`#@'
+categories:
+    - title: "Features"
+      semver-increment: minor
+      labels:
+          - "feature request"
+          - "enhancement"
+          - "translation"
+          - "release"
+    - title: "Bugfixes"
+      semver-increment: minor
+      labels:
+          - "fix"
+          - "bugfix"
+          - "bug"
+    - title: "Maintenance"
+      semver-increment: minor
+      labels:
+          - "maintenance"
+          - "infrastructure"
+    - title: "🚨 Security"
+      semver-increment: minor
+      labels:
+          - "security"
+version-resolver:
+    default: minor
+template: |
+    **Compatible with PHP 8.2 to 8.5**
+    
+    $CHANGES
+    
+    You can read more about all security reports [here](https://www.kimai.org/documentation/bughunter.html#published-vulnerabilities) or grab this [RSS feed](https://www.kimai.org/security.xml) to get notified about new published advisories.
+
+    Involved in this release: $CONTRIBUTORS

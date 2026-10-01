@@ -1,0 +1,51 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Repository\Query;
+
+use App\Entity\User;
+use App\Repository\Query\TeamQuery;
+use PHPUnit\Framework\Attributes\CoversClass;
+
+#[CoversClass(TeamQuery::class)]
+class TeamQueryTest extends BaseQueryTest
+{
+    public function testQuery(): void
+    {
+        $sut = new TeamQuery();
+
+        $this->assertBaseQuery($sut, 'name');
+        $this->assertUsers($sut);
+        $this->assertResetByFormError(new TeamQuery(), 'name');
+    }
+
+    public function assertUsers(TeamQuery $sut): void
+    {
+        self::assertEmpty($sut->getUsers());
+
+        $user = $this->createMock(User::class);
+        $user->method('getId')->willReturn(1);
+        $sut->addUser($user);
+
+        $user = $this->createMock(User::class);
+        $user->method('getId')->willReturn(1);
+        $sut->addUser($user);
+
+        $user = $this->createMock(User::class);
+        $user->method('getId')->willReturn(13);
+        $sut->addUser($user);
+
+        $user = $this->createMock(User::class);
+        $user->method('getId')->willReturn(27);
+        $sut->addUser($user);
+        $sut->removeUser($user);
+
+        self::assertCount(2, $sut->getUsers());
+    }
+}

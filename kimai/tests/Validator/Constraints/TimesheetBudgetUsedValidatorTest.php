@@ -1,0 +1,680 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Validator\Constraints;
+
+use App\Activity\ActivityStatisticService;
+use App\Configuration\LocaleService;
+use App\Customer\CustomerStatisticService;
+use App\Entity\Activity;
+use App\Entity\Customer;
+use App\Entity\Project;
+use App\Entity\Timesheet;
+use App\Entity\User;
+use App\Model\ActivityBudgetStatisticModel;
+use App\Model\ActivityStatistic;
+use App\Model\CustomerBudgetStatisticModel;
+use App\Model\CustomerStatistic;
+use App\Model\ProjectBudgetStatisticModel;
+use App\Model\ProjectStatistic;
+use App\Project\ProjectStatisticService;
+use App\Repository\TimesheetRepository;
+use App\Tests\Mocks\SystemConfigurationFactory;
+use App\Timesheet\Rate;
+use App\Timesheet\RateCalculator\ClassicRateCalculator;
+use App\Timesheet\RateService;
+use App\Timesheet\RateServiceInterface;
+use App\Validator\Constraints\TimesheetBudgetUsed;
+use App\Validator\Constraints\TimesheetBudgetUsedValidator;
+use DateTime;
+use DateTimeZone;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
+use Symfony\Component\Validator\Constraints\NotBlank;
+use Symfony\Component\Validator\Exception\UnexpectedTypeException;
+use Symfony\Component\Validator\Test\ConstraintValidatorTestCase;
+
+/**
+ * @extends ConstraintValidatorTestCase<TimesheetBudgetUsedValidator>
+ */
+#[CoversClass(TimesheetBudgetUsed::class)]
+#[CoversClass(TimesheetBudgetUsedValidator::class)]
+class TimesheetBudgetUsedValidatorTest extends ConstraintValidatorTestCase
+{
+    /**
+     * @param array<mixed>|null $rawData
+     */
+    protected function createValidator(bool $isAllowed = false, ?ActivityBudgetStatisticModel $activityStatisticModel = null, ?ProjectBudgetStatisticModel $projectStatisticModel = null, ?CustomerBudgetStatisticModel $customerStatisticModel = null, ?array $rawData = null, ?Rate $rate = null): TimesheetBudgetUsedValidator
+    {
+        $configuration = SystemConfigurationFactory::createStub(['timesheet' => ['rules' => ['allow_overbooking_budget' => $isAllowed]]]);
+
+        if ($customerStatisticModel === null) {
+            $customerStatisticModel = new CustomerBudgetStatisticModel(new Customer('foo'));
+            $customerStatistic = new CustomerStatistic();
+            $customerStatisticModel->setStatisticTotal($customerStatistic);
+            $customerStatisticModel->setStatistic($customerStatistic);
+        }
+
+        $customerRepository = $this->createMock(CustomerStatisticService::class);
+        $customerRepository->method('getBudgetStatisticModel')->willReturn($customerStatisticModel);
+
+        if ($projectStatisticModel === null) {
+            $projectStatisticModel = new ProjectBudgetStatisticModel(new Project());
+            $projectStatistic = new ProjectStatistic();
+            $projectStatisticModel->setStatisticTotal($projectStatistic);
+            $projectStatisticModel->setStatistic($projectStatistic);
+        }
+
+        $projectRepository = $this->createMock(ProjectStatisticService::class);
+        $projectRepository->method('getBudgetStatisticModel')->willReturn($projectStatisticModel);
+
+        if ($activityStatisticModel === null) {
+            $activityStatisticModel = new ActivityBudgetStatisticModel(new Activity());
+            $activityStatistic = new ActivityStatistic();
+            $activityStatisticModel->setStatisticTotal($activityStatistic);
+            $activityStatisticModel->setStatistic($activityStatistic);
+        }
+
+        $activityRepository = $this->createMock(ActivityStatisticService::class);
+        $activityRepository->method('getBudgetStatisticModel')->willReturn($activityStatisticModel);
+
+        $timesheetRepository = $this->createMock(TimesheetRepository::class);
+        if (null !== $rawData) {
+            $timesheetRepository->method('getRawData')->willReturn($rawData);
+        }
+
+        if ($rate !== null) {
+            $rateService = $this->createMock(RateServiceInterface::class);
+            $rateService->method('calculate')->willReturn($rate);
+        } else {
+            $rateService = new RateService([], $timesheetRepository, new ClassicRateCalculator());
+        }
+
+        $auth = $this->createMock(AuthorizationCheckerInterface::class);
+
+        $localeService = new LocaleService([]);
+
+        return new TimesheetBudgetUsedValidator($configuration, $customerRepository, $projectRepository, $activityRepository, $timesheetRepository, $rateService, $auth, $localeService);
+    }
+
+    public function testConstraintIsInvalid(): void
+    {
+        $this->expectException(UnexpectedTypeException::class);
+
+        $this->validator->validate(new Timesheet(), new NotBlank());
+    }
+
+    public function testConstraintWithPreExistingViolation(): void
+    {
+        $this->validator = $this->createValidator();
+        $this->validator->initialize($this->context);
+        $this->context->addViolation('FOOOOOOOOO');
+
+        $this->validator->validate(new Timesheet(), new TimesheetBudgetUsed());
+        $this->buildViolation('FOOOOOOOOO')->assertRaised();
+    }
+
+    public function testTargetIsInvalid(): void
+    {
+        $this->expectException(UnexpectedTypeException::class);
+
+        $this->validator->validate('foo', new TimesheetBudgetUsed());
+    }
+
+    public function testWithMissingEnd(): void
+    {
+        $timesheet = new Timesheet();
+        $timesheet->setBegin(new DateTime());
+
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+        $this->assertNoViolation();
+    }
+
+    public function testWithMissingUser(): void
+    {
+        $timesheet = new Timesheet();
+        $timesheet->setBegin(new DateTime());
+        $timesheet->setEnd(new DateTime());
+
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+        $this->assertNoViolation();
+    }
+
+    public function testWithMissingProject(): void
+    {
+        $timesheet = new Timesheet();
+        $timesheet->setBegin(new DateTime());
+        $timesheet->setEnd(new DateTime());
+        $timesheet->setUser(new User());
+
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+        $this->assertNoViolation();
+    }
+
+    public function testWithoutBudget(): void
+    {
+        $project = new Project();
+        $project->setCustomer(new Customer('foo'));
+
+        $timesheet = new Timesheet();
+        $timesheet->setBegin(new DateTime());
+        $timesheet->setEnd(new DateTime());
+        $timesheet->setUser(new User());
+        $timesheet->setProject($project);
+
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+        $this->assertNoViolation();
+    }
+
+    public function testWithAllowedOverbooking(): void
+    {
+        $this->validator = $this->createValidator(true);
+        $this->validator->initialize($this->context);
+
+        $activity = new Activity();
+        $activity->setTimeBudget(3600);
+
+        $begin = new DateTime();
+        $end = clone $begin;
+        $end->modify('+3601 seconds');
+
+        $project = new Project();
+        $project->setCustomer(new Customer('foo'));
+
+        $timesheet = new Timesheet();
+        $timesheet->setBegin($begin);
+        $timesheet->setEnd($end);
+        $timesheet->setUser(new User());
+        $timesheet->setProject($project);
+        $timesheet->setActivity($activity);
+
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+        $this->assertNoViolation();
+    }
+
+    /**
+     * When a record is moved into a different month, the monthly budget statistic of the new month
+     * does not yet contain that record, so the full rate of the record - not the delta to its
+     * previous month - must be validated. Lowering the rate while moving the record into an
+     * (otherwise) already busy month must therefore still be able to raise a violation.
+     */
+    public function testMonthlyMoneyBudgetUsesFullRateWhenMonthChanged(): void
+    {
+        // new month already contains 600.00 of a 1000.00 budget, adding the full record rate of
+        // 500.00 overbooks it (600 + 500 > 1000), even though the record's rate was lowered from 900
+        $this->assertMonthlyMoneyBudget(500.0, true);
+    }
+
+    public function testMonthlyMoneyBudgetAllowsRecordThatFitsAfterMonthChanged(): void
+    {
+        // 600.00 already used, the full record rate of 300.00 still fits into the 1000.00 budget
+        $this->assertMonthlyMoneyBudget(300.0, false);
+    }
+
+    private function assertMonthlyMoneyBudget(float $newRate, bool $expectViolation): void
+    {
+        $begin = new DateTime('2024-08-15 10:00:00');
+        $end = new DateTime('2024-08-15 11:00:00');
+
+        $customer = $this->createMock(Customer::class);
+        $customer->method('getId')->willReturn(1);
+        $customer->method('getCurrency')->willReturn('EUR');
+        $customer->method('isMonthlyBudget')->willReturn(true);
+        $customer->method('getBudgetType')->willReturn('month');
+        $customer->method('hasBudgets')->willReturn(true);
+        $customer->method('hasBudget')->willReturn(true);
+        $customer->method('getBudget')->willReturn(1000.0);
+
+        $project = $this->createMock(Project::class);
+        $project->method('getId')->willReturn(1);
+        $project->method('getCustomer')->willReturn($customer);
+        $project->method('hasBudgets')->willReturn(false);
+        $project->method('isMonthlyBudget')->willReturn(false);
+
+        // the new (record) month already holds 600.00 booked by other records
+        $customerStatistic = new CustomerStatistic();
+        $customerStatistic->setRate(600.0);
+        $customerStatistic->setRateBillable(600.0);
+        $customerModel = new CustomerBudgetStatisticModel($customer);
+        $customerModel->setStatistic($customerStatistic);
+        $customerModel->setStatisticTotal($customerStatistic);
+
+        // the record was moved in from the previous month, where it used to cost 900.00
+        $rawData = [
+            'activity' => 1,
+            'project' => 1,
+            'customer' => 1,
+            'rate' => 900.0,
+            'duration' => 3600,
+            'begin' => new DateTime('2024-07-15 10:00:00'),
+            'end' => new DateTime('2024-07-15 11:00:00'),
+            'billable' => true,
+        ];
+
+        $timesheet = $this->createMock(Timesheet::class);
+        $timesheet->method('getId')->willReturn(1);
+        $timesheet->method('getBegin')->willReturn($begin);
+        $timesheet->method('getEnd')->willReturn($end);
+        $timesheet->method('getCalculatedDuration')->willReturn(3600);
+        $timesheet->method('getDuration')->willReturn(3600);
+        $timesheet->method('getUser')->willReturn(new User());
+        $timesheet->method('getProject')->willReturn($project);
+        $timesheet->method('getActivity')->willReturn(null);
+        $timesheet->method('isBillable')->willReturn(true);
+
+        $this->validator = $this->createValidator(false, null, null, $customerModel, $rawData, new Rate($newRate, 0.00));
+        $this->validator->initialize($this->context);
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+
+        if ($expectViolation) {
+            $this->buildViolation('Sorry, the budget is used up.')
+                ->atPath('property.path.customer')
+                ->setParameters([
+                    '%used%' => '€600.00',
+                    '%budget%' => '€1,000.00',
+                    '%free%' => '€400.00',
+                ])
+                ->assertRaised();
+        } else {
+            $this->assertNoViolation();
+        }
+    }
+
+    /**
+     * A record that sits on a local month boundary (e.g. the 1st at 00:30 in a timezone ahead of UTC)
+     * is stored in UTC and therefore looks like it belongs to the previous month in the raw database
+     * data. Editing such a record must not be mistaken for a month change, which would re-check the
+     * full rate against a monthly budget that already contains the record and reject an ordinary edit.
+     */
+    public function testEditOnLocalMonthBoundaryIsNotTreatedAsMonthChange(): void
+    {
+        // nothing budget-relevant changed - the record must simply be accepted (no double counting)
+        $this->assertLocalMonthBoundaryEdit(400.0, 400.0);
+    }
+
+    public function testRateChangeOnLocalMonthBoundaryUsesDeltaNotFullRate(): void
+    {
+        // the rate is raised from 400.00 to 450.00; only the +50.00 delta counts against the month
+        // (900.00 already used + 50.00 = 950.00 <= 1000.00), not the full 450.00 (which would overbook)
+        $this->assertLocalMonthBoundaryEdit(400.0, 450.0);
+    }
+
+    private function assertLocalMonthBoundaryEdit(float $rawRate, float $newRate): void
+    {
+        // Europe/Berlin is UTC+2 in August, so 00:30 local is 22:30 UTC on the previous (July) day
+        $timezone = new DateTimeZone('Europe/Berlin');
+        $begin = new DateTime('2024-08-01 00:30:00', $timezone);
+        $end = new DateTime('2024-08-01 01:30:00', $timezone);
+
+        $customer = $this->createMock(Customer::class);
+        $customer->method('getId')->willReturn(1);
+        $customer->method('getCurrency')->willReturn('EUR');
+        $customer->method('isMonthlyBudget')->willReturn(true);
+        $customer->method('getBudgetType')->willReturn('month');
+        $customer->method('hasBudgets')->willReturn(true);
+        $customer->method('hasBudget')->willReturn(true);
+        $customer->method('getBudget')->willReturn(1000.0);
+
+        $project = $this->createMock(Project::class);
+        $project->method('getId')->willReturn(1);
+        $project->method('getCustomer')->willReturn($customer);
+        $project->method('hasBudgets')->willReturn(false);
+        $project->method('isMonthlyBudget')->willReturn(false);
+
+        // the August budget already holds 900.00, including this record's current rate of 400.00
+        $customerStatistic = new CustomerStatistic();
+        $customerStatistic->setRate(900.0);
+        $customerStatistic->setRateBillable(900.0);
+        $customerModel = new CustomerBudgetStatisticModel($customer);
+        $customerModel->setStatistic($customerStatistic);
+        $customerModel->setStatisticTotal($customerStatistic);
+
+        // getRawData() returns "begin" in UTC (as hydrated by Doctrine), i.e. the previous month
+        $rawData = [
+            'activity' => 1,
+            'project' => 1,
+            'customer' => 1,
+            'rate' => $rawRate,
+            'duration' => 3600,
+            'begin' => new DateTime('2024-07-31 22:30:00', new DateTimeZone('UTC')),
+            'end' => new DateTime('2024-07-31 23:30:00', new DateTimeZone('UTC')),
+            'billable' => true,
+        ];
+
+        $timesheet = $this->createMock(Timesheet::class);
+        $timesheet->method('getId')->willReturn(1);
+        $timesheet->method('getBegin')->willReturn($begin);
+        $timesheet->method('getEnd')->willReturn($end);
+        $timesheet->method('getCalculatedDuration')->willReturn(3600);
+        $timesheet->method('getDuration')->willReturn(3600);
+        $timesheet->method('getUser')->willReturn(new User());
+        $timesheet->method('getProject')->willReturn($project);
+        $timesheet->method('getActivity')->willReturn(null);
+        $timesheet->method('isBillable')->willReturn(true);
+
+        $this->validator = $this->createValidator(false, null, null, $customerModel, $rawData, new Rate($newRate, 0.00));
+        $this->validator->initialize($this->context);
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+
+        $this->assertNoViolation();
+    }
+
+    public static function getViolationTestData(): array
+    {
+        return [
+            // activity: violations ----------------------------------------------------------------------
+            //        previously logged                         available budgets                                           expected violation                              duration            entry currently in database
+            'a_a' => [1230, null, null, null, null, null,       null, 3600, null, null, null, null, null, null, null,       '0:20', '0:39', '1:00', 'activity',          '+3600 seconds'],
+            'a_b' => [null, 900.0, null, null, null, null,      null, null, 1000.0, null, null, null, null, null, null,     '€900.00', '€100.00', '€1,000.00', 'activity',  '+3600 seconds',   [], new Rate(101.0, 0.00)],
+
+            // entries that do not consume any budget are allowed, even if the budget is already used up - see #6015
+            'a_a2' => [3601, null, null, null, null, null,      null, 3600, null, null, null, null, null, null, null,       null, null, null, null,                         '+0 seconds'],
+            'a_b2' => [null, 1001.0, null, null, null, null,    null, null, 1000.0, null, null, null, null, null, null,     null, null, null, null,                         '+3600 seconds'],
+
+            // activity: no violations
+            'a_c' => [1230, null, null, null, null, null,       null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'a_d' => [null, 1001.0, null, null, null, null,     null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'a_e' => [1230, 1001.0, null, null, null, null,     null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+
+            //        previously logged                         available budgets                                           expected violation                              duration            entry currently in database
+            'a_f1' => [1320, null, null, null, null, null,      null, 3600, null, null, null, null, null, null, null,       '0:22', '0:38', '1:00', 'activity',          '+3600 seconds',    ['rate' => 1.0, 'duration' => 1000]],
+            'a_h1' => [7200, null, null, null, null, null,      null, 7200, null, null, null, null, null, null, null,       '2:00', '0:00', '2:00', 'activity',          '+3601 seconds',    ['rate' => 1.0, 'duration' => 3600]],
+            'a_h2' => [3601, null, null, null, null, null,      null, 3600, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds',    ['rate' => 1.0, 'duration' => 3601]],
+            // shrinking an entry is not enough, if the remaining total still overbooks the time budget
+            'a_h3' => [10800, null, null, null, null, null,     null, 3600, null, null, null, null, null, null, null,      '3:00', '0:00', '1:00', 'activity',          '+3600 seconds',    ['rate' => 1.0, 'duration' => 7200]],
+            // lowering the rate of an existing entry must be allowed, even if the budget is already overbooked - see #6015
+            'a_g0' => [null, 1002.0, null, null, null, null,    null, null, 1000.0, null, null, null, null, null, null,     null, null, null, null,                         '+3600 seconds',    ['rate' => 1.0, 'duration' => 1010]],
+            'a_g1' => [null, 1002.0, null, null, null, null,    null, null, 1000.0, null, null, null, null, null, null,     null, null, null, null,                         '+3600 seconds',    ['rate' => 2.0, 'duration' => 0]],
+            // nothing changed => no violation
+            'a_x1' => [3600, 1000.0, null, null, null, null,    null, 3600, 1000.0, null, null, null, null, null, null,     null, null, null, null,                         '+3600 seconds',    ['rate' => 1000.0, 'duration' => 3600], new Rate(1000.0, 0.00)],
+            // monthly budget, date moved into another (already exhausted) month => the full rate is re-checked => violation
+            'a_x2' => [3600, 1000.0, null, null, null, null,    'month', 3600, 1000.0, null, null, null, null, null, null,  '€1,000.00', '€0.00', '€1,000.00', 'activity',     '+3600 seconds',    ['rate' => 999.0, 'duration' => 3599, 'begin' => new DateTime('2021-03-17 16:15:00'), 'end' => new DateTime('2021-03-17 17:15:01'), 'billable' => true], new Rate(1000.0, 0.00)],
+            // same, but the record is not billable => not validated => no violation
+            'a_x3' => [3600, 1000.0, null, null, null, null,    'month', 3600, 1000.0, null, null, null, null, null, null,  null, null, null, null,                         '+3600 seconds',    ['rate' => 999.0, 'duration' => 3599, 'begin' => new DateTime('2021-03-17 16:15:00'), 'end' => new DateTime('2021-03-17 17:15:01'), 'billable' => false], new Rate(1000.0, 0.00)],
+            // unchanged rate/duration, but moved into another exhausted month => the full rate still counts against the new month => violation
+            'a_x4' => [3600, 1000.0, null, null, null, null,    'month', 3600, 1000.0, null, null, null, null, null, null,  '€1,000.00', '€0.00', '€1,000.00', 'activity',     '+3600 seconds',    ['rate' => 1000.0, 'duration' => 3600, 'begin' => new DateTime('2021-03-17 16:15:00'), 'end' => new DateTime('2021-03-17 17:15:01'), 'billable' => true], new Rate(1000.0, 0.00)],
+            // same as a_x4, but the record is not billable => not validated => no violation
+            'a_x5' => [3600, 1000.0, null, null, null, null,    'month', 3600, 1000.0, null, null, null, null, null, null,  null, null, null, null,                         '+3600 seconds',    ['rate' => 1000.0, 'duration' => 3600, 'begin' => new DateTime('2021-03-17 16:15:00'), 'end' => new DateTime('2021-03-17 17:15:01'), 'billable' => false], new Rate(1000.0, 0.00)],
+
+            // project: violations ----------------------------------------------------------------------
+            'p_j' => [null, null, 1230, null, null, null,       null, null, null, null, 3600, null, null, null, null,       '0:20', '0:39', '1:00', 'project',           '+3600 seconds'],
+            'p_k' => [null, null, null, 900.0, null, null,      null, null, null, null, null, 1000.0, null, null, null,     '€900.00', '€100.00', '€1,000.00', 'project',   '+3600 seconds',   [], new Rate(101.0, 0.00)],
+
+            // entries that do not consume any budget are allowed, even if the budget is already used up - see #6015
+            'p_k2' => [null, null, null, 1001.0, null, null,    null, null, null, null, null, 1000.0, null, null, null,     null, null, null, null,                         '+3600 seconds'],
+            'p_a2' => [null, null, 3601, null, null, null,      null, null, null, null, 3600, null, null, null, null,       null, null, null, null,                         '+0 seconds'],
+
+            //        previously logged                         available budgets                                           expected violation                              duration            entry currently in database
+            'p_f1' => [null, null, 1320, null, null, null,      null, null, null, null, 3600, null, null, null, null,       '0:22', '0:38', '1:00', 'project',           '+3600 seconds',    ['rate' => 1.0, 'duration' => 1000]],
+            'p_h1' => [null, null, 7200, null, null, null,      null, null, null, null, 7200, null, null, null, null,       '2:00', '0:00', '2:00', 'project',           '+3601 seconds',    ['rate' => 1.0, 'duration' => 3600]],
+            'p_h2' => [null, null, 3601, null, null, null,      null, null, null, null, 3600, null, null, null, null,       null, null, null, null,                         '+3600 seconds',    ['rate' => 1.0, 'duration' => 3601]],
+            // shrinking an entry is not enough, if the remaining total still overbooks the time budget
+            'p_h3' => [null, null, 10800, null, null, null,     null, null, null, null, 3600, null, null, null, null,       '3:00', '0:00', '1:00', 'project',           '+3600 seconds',    ['rate' => 1.0, 'duration' => 7200]],
+            // lowering the rate of an existing entry must be allowed, even if the budget is already overbooked - see #6015
+            'p_g0' => [null, null, null, 1002.0, null, null,    null, null, null, null, null, 1000.0, null, null, null,     null, null, null, null,                         '+3600 seconds',    ['rate' => 1.0, 'duration' => 1010]],
+            'p_g1' => [null, null, null, 1002.0, null, null,    null, null, null, null, null, 1000.0, null, null, null,     null, null, null, null,                         '+3600 seconds',    ['rate' => 2.0, 'duration' => 0]],
+
+            // project: no violations
+            'p_n' => [null, null, 1230, null, null, null,       null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'p_o' => [null, null, null, 1001.0, null, null,     null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'p_p' => [null, null, 1230, 1001, null, null,       null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+
+            'p_q' => [1230, null, 1230, null, null, null,       null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'p_r' => [1230, 1001.0, 1230, null, null, null,     null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'p_s' => [null, 1001.0, null, 1001.0, null, null,   null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'p_t' => [null, 1001.0, 1230, 1001.0, null, null,   null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+            'p_u' => [1230, 1001.0, 1230, 1001.0, null, null,   null, null, null, null, null, null, null, null, null,       null, null, null, null,                         '+3600 seconds'],
+
+            // customer: violations ----------------------------------------------------------------------
+            'c_v' => [null, null, null, null, 1230, null,       null, null, null, null, null, null, null, 3600, null,       '0:20', '0:39', '1:00', 'customer',          '+3600 seconds'],
+            'c_w' => [null, null, null, null, null, 900.0,      null, null, null, null, null, null, null, null, 1000.0,     '€900.00', '€100.00', '€1,000.00', 'customer',  '+3600 seconds',   [], new Rate(101.0, 0.00)],
+
+            // entries that do not consume any budget are allowed, even if the budget is already used up - see #6015
+            'c_w2' => [null, null, null, null, null, 1001.0,    null, null, null, null, null, null, null, null, 1000.0,     null, null, null, null,                         '+3600 seconds'],
+            'c_a2' => [null, null, null, null, 3601, null,      null, null, null, null, null, null, null, 3600, null,       null, null, null, null,                         '+0 seconds'],
+
+            //        previously logged                         available budgets                                           expected violation                              duration            entry currently in database
+            'c_f1' => [null, null, null, null, 1320, null,      null, null, null, null, null, null, null, 3600, null,       '0:22', '0:38', '1:00', 'customer',          '+3600 seconds',    ['rate' => 1.0, 'duration' => 1000]],
+            'c_h1' => [null, null, null, null, 7200, null,      null, null, null, null, null, null, null, 7200, null,       '2:00', '0:00', '2:00', 'customer',          '+3601 seconds',    ['rate' => 1.0, 'duration' => 3600]],
+            'c_h2' => [null, null, null, null, 3601, null,      null, null, null, null, null, null, null, 3600, null,       null, null, null, null,                         '+3600 seconds',    ['rate' => 1.0, 'duration' => 3601]],
+            // shrinking an entry is not enough, if the remaining total still overbooks the time budget
+            'c_h3' => [null, null, null, null, 10800, null,     null, null, null, null, null, null, null, 3600, null,       '3:00', '0:00', '1:00', 'customer',          '+3600 seconds',    ['rate' => 1.0, 'duration' => 7200]],
+            // lowering the rate of an existing entry must be allowed, even if the budget is already overbooked - see #6015
+            'c_g0' => [null, null, null, null, null, 1002.0,    null, null, null, null, null, null, null, null, 1000.0,     null, null, null, null,                         '+3600 seconds',    ['rate' => 1.0, 'duration' => 1010]],
+            'c_g1' => [null, null, null, null, null, 1002.0,    null, null, null, null, null, null, null, null, 1000.0,     null, null, null, null,                         '+3600 seconds',    ['rate' => 2.0, 'duration' => 0]],
+
+            // customer: no violations
+            'c_z' => [null, null, null, null, 1230, null,       null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+            'c_1' => [null, null, null, null, null, 1001.0,     null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+            'c_2' => [null, null, null, null, 1230, 1001.0,     null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+            'c_3' => [1230, null, 1230, null, 1230, null,       null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+            'c_4' => [1230, 1001.0, 1230, null, null, 1001.0,   null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+            'c_5' => [null, 1001.0, null, 1001.0, 1230, 1001.0, null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+            'c_6' => [null, 1001.0, 1230, 1001.0, 1230, null,   null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+            'c_7' => [1230, 1001.0, 1230, 1001.0, null, 1001.0, null, null, null, null, null, null, null, null, null,       null, null, null, null, '+3600 seconds'],
+        ];
+    }
+
+    #[DataProvider('getViolationTestData')]
+    public function testWithActivityTimeBudget(
+        ?int $activityDuration,
+        ?float $activityRate,
+        ?int $projectDuration,
+        ?float $projectRate,
+        ?int $customerDuration,
+        ?float $customerRate,
+        ?string $activityBudgetType,
+        ?int $activityTimeBudget,
+        ?float $activityBudget,
+        ?string $projectBudgetType,
+        ?int $projectTimeBudget,
+        ?float $projectBudget,
+        ?string $customerBudgetType,
+        ?int $customerTimeBudget,
+        ?float $customerBudget,
+        ?string $used,
+        ?string $free,
+        ?string $budget,
+        ?string $path,
+        string $duration,
+        array $rawData = [],
+        ?Rate $rate = null
+    ): void {
+        $activityStatistic = new ActivityStatistic();
+        if ($activityDuration !== null) {
+            $activityStatistic->setDuration($activityDuration);
+            $activityStatistic->setDurationBillable($activityDuration);
+        }
+        if ($activityRate !== null) {
+            $activityStatistic->setRate($activityRate);
+            $activityStatistic->setRateBillable($activityRate);
+        }
+
+        $projectStatistic = new ProjectStatistic();
+        if ($projectDuration !== null) {
+            $projectStatistic->setDuration($projectDuration);
+            $projectStatistic->setDurationBillable($projectDuration);
+        }
+        if ($projectRate !== null) {
+            $projectStatistic->setRate($projectRate);
+            $projectStatistic->setRateBillable($projectRate);
+        }
+
+        $customerStatistic = new CustomerStatistic();
+        if ($customerDuration !== null) {
+            $customerStatistic->setDuration($customerDuration);
+            $customerStatistic->setDurationBillable($customerDuration);
+        }
+        if ($customerRate !== null) {
+            $customerStatistic->setRate($customerRate);
+            $customerStatistic->setRateBillable($customerRate);
+        }
+
+        $begin = new DateTime();
+        $end = clone $begin;
+        $end->modify($duration);
+
+        $customer = null;
+        $project = null;
+        $activity = null;
+
+        if (!empty($rawData)) {
+            if (!\array_key_exists('activity', $rawData)) {
+                $rawData['activity'] = 1;
+            }
+            if (!\array_key_exists('billable', $rawData)) {
+                $rawData['billable'] = true;
+            }
+            if (!\array_key_exists('project', $rawData)) {
+                $rawData['project'] = 1;
+            }
+            if (!\array_key_exists('customer', $rawData)) {
+                $rawData['customer'] = 1;
+            }
+            if (!\array_key_exists('rate', $rawData)) {
+                $rawData['rate'] = 0.00;
+            }
+            if (!\array_key_exists('duration', $rawData)) {
+                $rawData['duration'] = 0;
+            }
+            if (!\array_key_exists('begin', $rawData)) {
+                $rawData['begin'] = clone $begin;
+            }
+            if (!\array_key_exists('end', $rawData)) {
+                $rawData['end'] = clone $end;
+            }
+            $activity = $this->createMock(Activity::class);
+            $activity->method('getId')->willReturn($rawData['activity']);
+            $activity->method('isMonthlyBudget')->willReturn($activityBudgetType === 'month');
+            if ($activityBudgetType !== null) {
+                $activity->method('getBudgetType')->willReturn($activityBudgetType);
+            }
+            if ($activityTimeBudget !== null) {
+                $activity->method('getTimeBudget')->willReturn($activityTimeBudget);
+                $activity->method('hasTimeBudget')->willReturn(true);
+                $activity->method('hasBudgets')->willReturn(true);
+            }
+            if ($activityBudget !== null) {
+                $activity->method('getBudget')->willReturn($activityBudget);
+                $activity->method('hasBudget')->willReturn(true);
+                $activity->method('hasBudgets')->willReturn(true);
+            }
+
+            $customer = $this->createMock(Customer::class);
+            $customer->method('getCurrency')->willReturn('EUR');
+            $customer->method('getId')->willReturn($rawData['customer']);
+            $customer->method('isMonthlyBudget')->willReturn($customerBudgetType === 'month');
+            if ($customerBudgetType !== null) {
+                $customer->method('getBudgetType')->willReturn($customerBudgetType);
+            }
+            if ($customerTimeBudget !== null) {
+                $customer->method('getTimeBudget')->willReturn($customerTimeBudget);
+                $customer->method('hasTimeBudget')->willReturn(true);
+                $customer->method('hasBudgets')->willReturn(true);
+            }
+            if ($customerBudget !== null) {
+                $customer->method('getBudget')->willReturn($customerBudget);
+                $customer->method('hasBudget')->willReturn(true);
+                $customer->method('hasBudgets')->willReturn(true);
+            }
+
+            $project = $this->createMock(Project::class);
+            $project->method('getId')->willReturn($rawData['project']);
+            $project->method('getCustomer')->willReturn($customer);
+            $project->method('isMonthlyBudget')->willReturn($projectBudgetType === 'month');
+            if ($projectBudgetType !== null) {
+                $project->method('getBudgetType')->willReturn($projectBudgetType);
+            }
+            if ($projectTimeBudget !== null) {
+                $project->method('getTimeBudget')->willReturn($projectTimeBudget);
+                $project->method('hasTimeBudget')->willReturn(true);
+                $project->method('hasBudgets')->willReturn(true);
+            }
+            if ($projectBudget !== null) {
+                $project->method('getBudget')->willReturn($projectBudget);
+                $project->method('hasBudget')->willReturn(true);
+                $project->method('hasBudgets')->willReturn(true);
+            }
+            $timesheet = $this->createMock(Timesheet::class);
+            $timesheet->method('getId')->willReturn(1);
+            $timesheet->method('getRate')->willReturn($rawData['rate']);
+            $timesheet->method('getBegin')->willReturn($begin);
+            $timesheet->method('getEnd')->willReturn($end);
+            $timesheet->method('getCalculatedDuration')->willReturn($end->getTimestamp() - $begin->getTimestamp());
+            $timesheet->method('getDuration')->willReturn($end->getTimestamp() - $begin->getTimestamp());
+            $timesheet->method('getUser')->willReturn(new User());
+            $timesheet->method('getProject')->willReturn($project);
+            $timesheet->method('getActivity')->willReturn($activity);
+            $timesheet->method('isBillable')->willReturn($rawData['billable']);
+        } else {
+            $activity = new Activity();
+            if ($activityTimeBudget !== null) {
+                $activity->setTimeBudget($activityTimeBudget);
+            }
+            if ($activityBudget !== null) {
+                $activity->setBudget($activityBudget);
+            }
+
+            $customer = new Customer('foo');
+            if ($customerTimeBudget !== null) {
+                $customer->setTimeBudget($customerTimeBudget);
+            }
+            if ($customerBudget !== null) {
+                $customer->setBudget($customerBudget);
+            }
+
+            $project = new Project();
+            if ($projectTimeBudget !== null) {
+                $project->setTimeBudget($projectTimeBudget);
+            }
+            if ($projectBudget !== null) {
+                $project->setBudget($projectBudget);
+            }
+            $project->setCustomer($customer);
+
+            $timesheet = new Timesheet();
+            $timesheet->setBegin($begin);
+            $timesheet->setEnd($end);
+            $timesheet->setUser(new User());
+            $timesheet->setProject($project);
+            $timesheet->setActivity($activity);
+        }
+
+        $activityBudgetStatisticModel = new ActivityBudgetStatisticModel($activity);
+        $activityBudgetStatisticModel->setStatistic($activityStatistic);
+        $activityBudgetStatisticModel->setStatisticTotal($activityStatistic);
+
+        $projectBudgetStatisticModel = new ProjectBudgetStatisticModel($project);
+        $projectBudgetStatisticModel->setStatistic($projectStatistic);
+        $projectBudgetStatisticModel->setStatisticTotal($projectStatistic);
+
+        $customerBudgetStatisticModel = new CustomerBudgetStatisticModel($customer);
+        $customerBudgetStatisticModel->setStatistic($customerStatistic);
+        $customerBudgetStatisticModel->setStatisticTotal($customerStatistic);
+
+        $this->validator = $this->createValidator(false, $activityBudgetStatisticModel, $projectBudgetStatisticModel, $customerBudgetStatisticModel, $rawData, $rate);
+        $this->validator->initialize($this->context);
+
+        $this->validator->validate($timesheet, new TimesheetBudgetUsed());
+
+        if (null === $used && null === $budget && null === $free && $path === null) {
+            $this->assertNoViolation();
+        } else {
+            $this->buildViolation('Sorry, the budget is used up.')
+                ->atPath('property.path.' . $path)
+                ->setParameters([
+                    '%used%' => $used,
+                    '%budget%' => $budget,
+                    '%free%' => $free
+                ])
+                ->assertRaised();
+        }
+    }
+}

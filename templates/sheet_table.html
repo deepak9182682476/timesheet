@@ -1,0 +1,58 @@
+<div class="table-scroll">
+  <table class="sheet" id="hour-sheet">
+    <thead>
+      <tr>
+        <th>Project</th>
+        {% for day in days %}
+        <th class="{% if day.weekend %}is-weekend{% endif %} {% if day.today %}is-today{% endif %}">
+          {{ day.dow }}<span>{{ day.label }}</span>
+        </th>
+        {% endfor %}
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for project in projects %}
+      <tr>
+        <th>
+          <span class="code">{{ project.code }}</span>
+          {{ project.name }}
+          {% if not project.active %}<em class="muted">Inactive</em>{% endif %}
+        </th>
+        {% for day in days %}
+        <td class="{% if day.weekend %}is-weekend{% endif %} {% if day.today %}is-today{% endif %}">
+          {% if editable %}
+          <input
+            name="h_{{ project.id }}_{{ day.iso }}"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            max="24"
+            step="0.25"
+            aria-label="{{ project.code }} on {{ day.label }}"
+            data-day="{{ day.iso }}"
+            data-project="{{ project.id }}"
+            {% if (project.id, day.iso) in grid %}value="{{ grid[(project.id, day.iso)]|hours }}"{% endif %}
+          >
+          {% else %}
+          <span data-day="{{ day.iso }}">
+            {% if (project.id, day.iso) in grid %}{{ grid[(project.id, day.iso)]|hours }}{% else %}—{% endif %}
+          </span>
+          {% endif %}
+        </td>
+        {% endfor %}
+        <td class="row-total" data-project-total="{{ project.id }}">{{ project_totals.get(project.id, 0)|hours }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th>Day total</th>
+        {% for day in days %}
+        <td class="{% if day.weekend %}is-weekend{% endif %}" data-total="{{ day.iso }}">{{ daily.get(day.iso, 0)|hours }}</td>
+        {% endfor %}
+        <td id="sheet-grand">{{ week_total|hours }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>

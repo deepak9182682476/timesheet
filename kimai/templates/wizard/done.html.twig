@@ -1,0 +1,14 @@
+{% extends 'wizard/layout.html.twig' %}
+{% from '@Tabler/components/button.html.twig' import button %}
+
+{% block wizard_content %}
+    <div class="card-body text-center py-4 p-sm-7">
+        <img src="{{ asset('touch-icon-512x512.png') }}" style="height: 200px" alt="AMI Paradigm">
+        <h1 class="mt-5">{{ 'wizard.done.title'|trans({}, 'wizard') }}</h1>
+        <p class="text-body-secondary">{{ 'wizard.done.description'|trans({}, 'wizard') }}</p>
+    </div>
+{% endblock %}
+
+{% block wizard_next_button %}
+    {{ button(false, { title : 'Next'|trans({}, 'TablerBundle'), combined: true, url: path('homepage') }, 'primary') }}
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="lede">Project IDs are what people pick when they log hours. Archiving hides an ID that already has timesheets.</p>
+<div class="split">
+  <section class="card">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Project ID</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for project in projects %}
+          <tr>
+            <td><span class="code">{{ project.code }}</span></td>
+            <td>
+              <strong>{{ project.name }}</strong>
+              {% if project.description %}<span class="muted">{{ project.description }}</span>{% endif %}
+            </td>
+            <td>
+              {% if project.active %}
+              <span class="status status-approved">Active</span>
+              {% else %}
+              <span class="status status-none">Archived</span>
+              {% endif %}
+            </td>
+            <td class="row-actions">
+              <a href="/projects?edit={{ project.id }}">Edit</a>
+              <form method="post" action="/projects/{{ project.id }}/delete" data-confirm="Remove {{ project.code }}? If it has hours, it will be archived.">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="text-btn danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">No projects yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card form-card">
+    <h2>{% if editing %}Edit {{ editing.code }}{% else %}Add a project ID{% endif %}</h2>
+    <form method="post" action="{% if editing %}/projects/{{ editing.id }}{% else %}/projects{% endif %}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>
+        Project ID
+        <input name="code" required maxlength="20" value="{{ editing.code if editing else '' }}" placeholder="PRJ-2404">
+      </label>
+      <label>
+        Name
+        <input name="name" required maxlength="80" value="{{ editing.name if editing else '' }}">
+      </label>
+      <label>
+        Description
+        <textarea name="description" rows="3" maxlength="300">{{ editing.description if editing else '' }}</textarea>
+      </label>
+      {% if editing %}
+      <label class="check">
+        <input type="checkbox" name="active" value="1" {% if editing.active %}checked{% endif %}>
+        Active
+      </label>
+      {% endif %}
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">{% if editing %}Save project{% else %}Add project{% endif %}</button>
+        {% if editing %}<a class="btn" href="/projects">Cancel</a>{% endif %}
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

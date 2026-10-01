@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block anonymous %}
+<div class="login-screen">
+  <section class="login-intro">
+    <div class="brand brand-light">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="brand-name">Timesheet</span>
+    </div>
+    <h1>Hours, projects, and the person who signs them off.</h1>
+    <p>Four logins. Each person sees their own week, and managers can fill in time for the people who report to them.</p>
+    <ul class="role-list">
+      <li><strong>Admin</strong><span>Dashboard, project IDs, add and delete people</span></li>
+      <li><strong>Project manager</strong><span>Own week, everyone below them, and their approvals</span></li>
+      <li><strong>Project lead</strong><span>Own week and the employees mapped to them</span></li>
+      <li><strong>Employee</strong><span>Enter a week and send it to their reporting person</span></li>
+    </ul>
+  </section>
+  <section class="login-panel">
+    <form class="login-card" method="post" action="/login">
+      <h2>Sign in</h2>
+      {% if flash %}
+      <div class="flash flash-{{ flash.kind }}" role="status">{{ flash.message }}</div>
+      {% endif %}
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <label>
+        Email
+        <input name="email" type="email" autocomplete="username" required>
+      </label>
+      <label>
+        Password
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+      <div class="demo">
+        <p>Demo accounts</p>
+        <div class="demo-grid">
+          {% for account in demo_accounts %}
+          <button class="demo-chip" type="button" data-email="{{ account.email }}" data-password="{{ account.password }}">
+            <span>{{ account.name }}</span>
+            <small>{{ account.role|role }}</small>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,89 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Invoice\Renderer;
+
+use App\Invoice\InvoiceModel;
+use App\Invoice\Renderer\AbstractRenderer;
+use App\Invoice\Renderer\AbstractSpreadsheetRenderer;
+use App\Invoice\Renderer\AdvancedValueBinder;
+use App\Invoice\Renderer\XlsxRenderer;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+
+#[CoversClass(XlsxRenderer::class)]
+#[CoversClass(AbstractRenderer::class)]
+#[CoversClass(AbstractSpreadsheetRenderer::class)]
+#[CoversClass(AdvancedValueBinder::class)]
+#[Group('integration')]
+class XlsxRendererTest extends TestCase
+{
+    use RendererTestTrait;
+
+    public function testSupports(): void
+    {
+        $sut = $this->getAbstractRenderer(XlsxRenderer::class);
+
+        self::assertFalse($sut->supports($this->getInvoiceDocument('invoice.html.twig')));
+        self::assertFalse($sut->supports($this->getInvoiceDocument('service-date.pdf.twig')));
+        self::assertFalse($sut->supports($this->getInvoiceDocument('timesheet.html.twig')));
+        self::assertFalse($sut->supports($this->getInvoiceDocument('company.docx', true)));
+        self::assertTrue($sut->supports($this->getInvoiceDocument('spreadsheet.xlsx', true)));
+        self::assertFalse($sut->supports($this->getInvoiceDocument('open-spreadsheet.ods', true)));
+    }
+
+    public static function getTestModel()
+    {
+        yield [static fn (self $testCase) => $testCase->getInvoiceModel(), '1,947.99', 6, 5, 1, 2, 2];
+        yield [static fn (self $testCase) => $testCase->getInvoiceModelOneEntry(), '293.27', 2, 1, 0, 1, 0];
+    }
+
+    #[DataProvider('getTestModel')]
+    public function testRender(callable $invoiceModel, $expectedRate, $expectedRows, $expectedDescriptions, $expectedUser1, $expectedUser2, $expectedUser3): void
+    {
+        /** @var InvoiceModel $model */
+        $model = $invoiceModel($this); // FIXME
+
+        /** @var XlsxRenderer $sut */
+        $sut = $this->getAbstractRenderer(XlsxRenderer::class);
+        $model = $this->getInvoiceModel();
+        $document = $this->getInvoiceDocument('spreadsheet.xlsx', true);
+        /** @var BinaryFileResponse $response */
+        $response = $sut->render($document, $model);
+
+        $filename = $model->getInvoiceNumber() . '-customer_with_special_name.xlsx';
+        $file = $response->getFile();
+        self::assertEquals('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', $response->headers->get('Content-Type'));
+        self::assertEquals('attachment; filename=' . $filename, $response->headers->get('Content-Disposition'));
+
+        self::assertTrue(file_exists($file->getRealPath()));
+
+        // TODO test document content?
+        /*
+        $content = file_get_contents($file->getRealPath());
+        self::assertNotContains('${', $content);
+        self::assertStringContainsString(',"1,947.99" ', $content);
+        self::assertEquals(6, substr_count($content, PHP_EOL));
+        self::assertEquals(5, substr_count($content, 'activity description'));
+        self::assertEquals(1, substr_count($content, ',"kevin",'));
+        self::assertEquals(2, substr_count($content, ',"hello-world",'));
+        self::assertEquals(2, substr_count($content, ',"foo-bar",'));
+        */
+
+        ob_start();
+        $response->sendContent();
+        $content2 = ob_get_clean();
+        self::assertNotEmpty($content2);
+
+        self::assertFalse(file_exists($file->getRealPath()));
+    }
+}

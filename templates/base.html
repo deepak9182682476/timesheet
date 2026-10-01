@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Timesheet</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  {% if user %}
+  <input class="nav-toggle" id="nav-toggle" type="checkbox" aria-label="Open menu">
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <span class="mark" aria-hidden="true"></span>
+        <span>
+          <span class="brand-name">Timesheet</span>
+          <span class="brand-sub">Hours and approvals</span>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a class="{% if active == 'dashboard' %}is-active{% endif %}" href="/">Dashboard</a>
+        <a class="{% if active == 'timesheet' %}is-active{% endif %}" href="/timesheet">Timesheet</a>
+        {% if user.role in ["admin", "project_manager", "project_lead"] %}
+        <a class="{% if active == 'approvals' %}is-active{% endif %}" href="/approvals">
+          Approvals
+          {% if pending_count %}<span class="count">{{ pending_count }}</span>{% endif %}
+        </a>
+        {% endif %}
+        {% if user.role == "admin" %}
+        <a class="{% if active == 'projects' %}is-active{% endif %}" href="/projects">Projects</a>
+        <a class="{% if active == 'people' %}is-active{% endif %}" href="/people">People</a>
+        {% endif %}
+      </nav>
+      <div class="me">
+        <div class="avatar" aria-hidden="true">{{ user.name[:1] }}</div>
+        <div class="me-copy">
+          <strong>{{ user.name }}</strong>
+          <span>{{ user.role|role }}</span>
+        </div>
+        <form method="post" action="/logout">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="text-btn" type="submit">Log out</button>
+        </form>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <label class="menu-btn" for="nav-toggle">Menu</label>
+        <div>
+          {% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}
+          <h1>{{ title }}</h1>
+        </div>
+      </header>
+      {% if flash %}
+      <div class="flash flash-{{ flash.kind }}" role="status">{{ flash.message }}</div>
+      {% endif %}
+      <div class="content">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  {% block anonymous %}{% endblock %}
+  {% endif %}
+  <script src="/static/app.js"></script>
+</body>
+</html>

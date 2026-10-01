@@ -1,0 +1,651 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Controller;
+
+use App\Entity\Activity;
+use App\Entity\ActivityMeta;
+use App\Entity\ActivityRate;
+use App\Entity\Project;
+use App\Entity\Role;
+use App\Entity\RolePermission;
+use App\Entity\Team;
+use App\Entity\Timesheet;
+use App\Entity\User;
+use App\Tests\DataFixtures\ActivityFixtures;
+use App\Tests\DataFixtures\CustomerFixtures;
+use App\Tests\DataFixtures\ProjectFixtures;
+use App\Tests\DataFixtures\TeamFixtures;
+use App\Tests\DataFixtures\TimesheetFixtures;
+use App\Tests\Mocks\ActivityTestMetaFieldSubscriberMock;
+use Doctrine\ORM\EntityManager;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\DomCrawler\Field\ChoiceFormField;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpKernel\HttpKernelBrowser;
+
+#[Group('integration')]
+class ActivityControllerTest extends AbstractControllerBaseTestCase
+{
+    public function testIsSecure(): void
+    {
+        $this->assertUrlIsSecured('/admin/activity/');
+    }
+
+    public function testIsSecureForRole(): void
+    {
+        $this->assertUrlIsSecuredForRole(User::ROLE_USER, '/admin/activity/');
+    }
+
+    public function testIndexAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_TEAMLEAD);
+        $this->assertAccessIsGranted($client, '/admin/activity/');
+        $this->assertHasDataTable($client);
+
+        $this->assertPageActions($client, [
+            'download toolbar-action' => $this->createUrl('/admin/activity/export'),
+            'create modal-ajax-form' => $this->createUrl('/admin/activity/create'),
+        ]);
+    }
+
+    public function testIndexActionAsSuperAdmin(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_SUPER_ADMIN);
+        $this->assertAccessIsGranted($client, '/admin/activity/');
+        $this->assertHasDataTable($client);
+
+        $this->assertPageActions($client, [
+            'download toolbar-action' => $this->createUrl('/admin/activity/export'),
+            'create modal-ajax-form' => $this->createUrl('/admin/activity/create'),
+        ]);
+    }
+
+    public function testIndexActionWithSearchTermQuery(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+
+        $fixture = new ActivityFixtures();
+        $fixture->setAmount(5);
+        $fixture->setCallback(function (Activity $activity): void {
+            $activity->setVisible(true);
+            $activity->setComment('I am a foobar with tralalalala some more content');
+            $activity->setMetaField((new ActivityMeta())->setName('location')->setValue('homeoffice'));
+            $activity->setMetaField((new ActivityMeta())->setName('feature')->setValue('timetracking'));
+        });
+        $this->importFixture($fixture);
+
+        $this->assertAccessIsGranted($client, '/admin/activity/');
+
+        $form = $client->getCrawler()->filter('form.searchform')->form();
+        $client->submit($form, [
+            'searchTerm' => 'feature:timetracking foo',
+            'visibility' => 1,
+            'size' => 50,
+            'customers' => [1],
+            'projects' => [1],
+            'page' => 1,
+        ]);
+
+        self::assertTrue($client->getResponse()->isSuccessful());
+        $this->assertHasDataTable($client);
+        $this->assertDataTableRowCount($client, 'datatable_activity_admin', 5);
+    }
+
+    public function testExportIsSecureForRole(): void
+    {
+        $this->assertUrlIsSecuredForRole(User::ROLE_USER, '/admin/activity/export');
+    }
+
+    public function testExportAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_TEAMLEAD);
+        $this->assertAccessIsGranted($client, '/admin/activity/export');
+        $this->assertExcelExportResponse($client, 'kimai-activities_');
+    }
+
+    /**
+     * Regression test for GHSA-hr8v-m742-9mph.
+     *
+     * The export is protected by "listing" only. It must apply the same budget rules as the
+     * listing table, which hides those columns unless the budget permissions are granted.
+     */
+    public function testExportHidesBudgetsWithoutPermission(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_USER);
+        $this->grantPermissions(User::ROLE_USER, 'TEST_ACTIVITY_LISTING_ONLY', ['view_activity']);
+
+        $em = $this->getEntityManager();
+        /** @var Activity $entity */
+        $entity = $em->getRepository(Activity::class)->find(1);
+        $entity->setBudget(123456.78);
+        $entity->setTimeBudget(987654);
+        $entity->setBudgetType('month');
+        $em->persist($entity);
+        $em->flush();
+
+        $this->assertAccessIsGranted($client, '/admin/activity/export');
+        $content = $this->getExcelExportContent($client);
+
+        self::assertStringNotContainsString('123456.78', $content);
+        self::assertStringNotContainsString('987654', $content);
+        self::assertStringNotContainsString('month', $content);
+    }
+
+    public function testExportShowsBudgetsWithPermission(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+
+        $em = $this->getEntityManager();
+        /** @var Activity $entity */
+        $entity = $em->getRepository(Activity::class)->find(1);
+        $entity->setBudget(123456.78);
+        $entity->setTimeBudget(987654);
+        $entity->setBudgetType('month');
+        $em->persist($entity);
+        $em->flush();
+
+        $this->assertAccessIsGranted($client, '/admin/activity/export');
+        $content = $this->getExcelExportContent($client);
+
+        self::assertStringContainsString('123456.78', $content);
+        self::assertStringContainsString('987654', $content);
+        self::assertStringContainsString('month', $content);
+    }
+
+    public function testExportActionWithSearchTermQuery(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+
+        $fixture = new ActivityFixtures();
+        $fixture->setAmount(5);
+        $fixture->setCallback(function (Activity $activity): void {
+            $activity->setVisible(true);
+            $activity->setComment('I am a foobar with tralalalala some more content');
+            $activity->setMetaField((new ActivityMeta())->setName('location')->setValue('homeoffice'));
+            $activity->setMetaField((new ActivityMeta())->setName('feature')->setValue('timetracking'));
+        });
+        $this->importFixture($fixture);
+
+        $this->assertAccessIsGranted($client, '/admin/activity/');
+
+        $form = $client->getCrawler()->filter('form.searchform')->form();
+        $form->getFormNode()->setAttribute('action', $this->createUrl('/admin/activity/export'));
+        $client->submit($form, [
+            'searchTerm' => 'feature:timetracking foo',
+            'visibility' => 1,
+            'size' => 50,
+            'customers' => [1],
+            'projects' => [1],
+            'page' => 1,
+        ]);
+
+        $this->assertExcelExportResponse($client, 'kimai-activities_');
+    }
+
+    public function testDetailsAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        /** @var EntityManager $em */
+        $em = $this->getEntityManager();
+
+        $fixture = new TimesheetFixtures();
+        $fixture->setAmount(10);
+        $fixture->setActivities($em->getRepository(Activity::class)->findAll());
+        $fixture->setUser($this->getUserByRole(User::ROLE_ADMIN));
+        $this->importFixture($fixture);
+
+        $project = $em->getRepository(Project::class)->find(1);
+        $fixture = new ActivityFixtures();
+        $fixture->setAmount(6); // to trigger a second page
+        $fixture->setProjects([$project]);
+        $this->importFixture($fixture);
+
+        $this->assertAccessIsGranted($client, '/admin/activity/1/details');
+
+        $this->assertDetailsPage($client);
+    }
+
+    private function assertDetailsPage(HttpKernelBrowser $client)
+    {
+        self::assertHasProgressbar($client);
+
+        $node = $client->getCrawler()->filter('div.card#activity_details_box');
+        self::assertEquals(1, $node->count());
+        $node = $client->getCrawler()->filter('div.card#time_budget_box');
+        self::assertEquals(1, $node->count());
+        $node = $client->getCrawler()->filter('div.card#budget_box');
+        self::assertEquals(1, $node->count());
+        $node = $client->getCrawler()->filter('div.card#activity_rates_box');
+        self::assertEquals(1, $node->count());
+    }
+
+    public function testAddRateAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $this->assertAccessIsGranted($client, '/admin/activity/1/rate');
+        $form = $client->getCrawler()->filter('form[name=activity_rate_form]')->form();
+        $client->submit($form, [
+            'activity_rate_form' => [
+                'rate' => 123.45,
+            ]
+        ]);
+        $this->assertIsRedirect($client, $this->createUrl('/admin/activity/1/details'));
+        $client->followRedirect();
+        $node = $client->getCrawler()->filter('div.card#activity_rates_box');
+        self::assertEquals(1, $node->count());
+        $node = $client->getCrawler()->filter('div.card#activity_rates_box table.dataTable tbody tr:not(.summary)');
+        self::assertEquals(1, $node->count());
+        self::assertStringContainsString('123.45', $node->text(null, true));
+    }
+
+    public function testEditRateActionDeniesForeignRate(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+
+        $project = $this->getEntityManager()->getRepository(Project::class)->find(1);
+        self::assertInstanceOf(Project::class, $project);
+
+        $activity = $this->importFixture((new ActivityFixtures(1))->setProjects([$project]))[0];
+        $rate = new ActivityRate();
+        $rate->setActivity($activity);
+        $rate->setRate(123.45);
+
+        $em = $this->getEntityManager();
+        $em->persist($rate);
+        $em->flush();
+
+        $this->request($client, '/admin/activity/1/rate/' . $rate->getId());
+
+        $this->assertAccessDenied($client);
+    }
+
+    public function testCreateWithProjectActionDeniesUserWithoutEditProjectPermission(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_USER);
+        $user = $this->getUserByRole(User::ROLE_USER);
+
+        $customer = $this->importFixture(new CustomerFixtures(1))[0];
+        $project = $this->importFixture((new ProjectFixtures(1))->setCustomers([$customer]))[0];
+
+        $em = $this->getEntityManager();
+
+        $role = (new Role())->setName('TEST_CREATE_ACTIVITY_ONLY');
+        $permission = (new RolePermission())->setRole($role)->setPermission('create_activity')->setAllowed(true);
+
+        $roleName = $role->getName();
+        self::assertNotNull($roleName);
+        $user->addRole($roleName);
+
+        $em->persist($role);
+        $em->persist($permission);
+        $em->persist($user);
+        $em->flush();
+
+        $this->request($client, '/admin/activity/create/' . $project->getId());
+
+        $this->assertAccessDenied($client);
+    }
+
+    public function testCreateAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $this->assertAccessIsGranted($client, '/admin/activity/create');
+        $form = $client->getCrawler()->filter('form[name=activity_edit_form]')->form();
+        $client->submit($form, [
+            'activity_edit_form' => [
+                'name' => 'An AcTiVitY Name',
+                'project' => '1',
+            ]
+        ]);
+
+        $location = $this->assertIsModalRedirect($client, '/details');
+        $this->requestPure($client, $location);
+
+        $this->assertDetailsPage($client);
+        $this->assertHasFlashSuccess($client);
+
+        $activities = $this->getEntityManager()->getRepository(Activity::class)->findAll();
+        $activity = array_pop($activities);
+        $id = $activity->getId();
+
+        $this->request($client, '/admin/activity/' . $id . '/edit');
+        $editForm = $client->getCrawler()->filter('form[name=activity_edit_form]')->form();
+        self::assertEquals('An AcTiVitY Name', $editForm->get('activity_edit_form[name]')->getValue());
+    }
+
+    public function testCreateActionShowsMetaFields(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $eventDispatcher = self::getContainer()->get('event_dispatcher');
+        static::assertInstanceOf(EventDispatcher::class, $eventDispatcher);
+        $eventDispatcher->addSubscriber(new ActivityTestMetaFieldSubscriberMock());
+        $this->assertAccessIsGranted($client, '/admin/activity/create');
+        self::assertTrue($client->getResponse()->isSuccessful());
+
+        $form = $client->getCrawler()->filter('form[name=activity_edit_form]')->form();
+        self::assertTrue($form->has('activity_edit_form[metaFields][metatestmock][value]'));
+        self::assertTrue($form->has('activity_edit_form[metaFields][foobar][value]'));
+        self::assertFalse($form->has('activity_edit_form[metaFields][0][value]'));
+    }
+
+    public function testEditAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $this->assertAccessIsGranted($client, '/admin/activity/1/edit');
+        $form = $client->getCrawler()->filter('form[name=activity_edit_form]')->form();
+        self::assertEquals('Test', $form->get('activity_edit_form[name]')->getValue());
+        $client->submit($form, [
+            'activity_edit_form' => ['name' => 'Test 2']
+        ]);
+        $this->assertIsRedirect($client, $this->createUrl('/admin/activity/1/details'));
+        $client->followRedirect();
+        $this->request($client, '/admin/activity/1/edit');
+        $editForm = $client->getCrawler()->filter('form[name=activity_edit_form]')->form();
+        self::assertEquals('Test 2', $editForm->get('activity_edit_form[name]')->getValue());
+    }
+
+    public function testEditActionForGlobalActivity(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $this->assertAccessIsGranted($client, '/admin/activity/1/edit');
+        $form = $client->getCrawler()->filter('form[name=activity_edit_form]')->form();
+        self::assertEquals('Test', $form->get('activity_edit_form[name]')->getValue());
+        $client->submit($form, [
+            'activity_edit_form' => ['name' => 'Test 2']
+        ]);
+        $this->assertIsRedirect($client, $this->createUrl('/admin/activity/1/details'));
+        $client->followRedirect();
+        $this->request($client, '/admin/activity/1/edit');
+        $editForm = $client->getCrawler()->filter('form[name=activity_edit_form]')->form();
+        self::assertEquals('Test 2', $editForm->get('activity_edit_form[name]')->getValue());
+    }
+
+    public function testTeamPermissionAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $em = $this->getEntityManager();
+
+        /** @var Activity $activity */
+        $activity = $em->getRepository(Activity::class)->findAll()[0];
+        self::assertEquals(0, $activity->getTeams()->count());
+        $id = $activity->getId();
+
+        $fixture = new TeamFixtures();
+        $fixture->setAmount(2);
+        $fixture->setAddCustomer(false);
+        $this->importFixture($fixture);
+
+        $this->assertAccessIsGranted($client, '/admin/activity/' . $id . '/permissions');
+        $form = $client->getCrawler()->filter('form[name=activity_team_permission_form]')->form();
+        /** @var ChoiceFormField $team1 */
+        $team1 = $form->get('activity_team_permission_form[teams][0]');
+        $team1->tick();
+        /** @var ChoiceFormField $team2 */
+        $team2 = $form->get('activity_team_permission_form[teams][1]');
+        $team2->tick();
+
+        $client->submit($form);
+        $this->assertIsRedirect($client, $this->createUrl('/admin/activity/' . $id . '/details'));
+
+        /** @var Activity $activity */
+        $activity = $em->getRepository(Activity::class)->find($id);
+        self::assertEquals(2, $activity->getTeams()->count());
+    }
+
+    public function testCreateTeamActionIsSecure(): void
+    {
+        $this->assertUrlIsSecuredForRole(User::ROLE_USER, '/admin/activity/1/team-create');
+    }
+
+    /**
+     * "create_team" alone is not enough, the caller also has to be allowed to manage the
+     * permissions of the activity the team is created for.
+     */
+    public function testCreateTeamActionNeedsActivityPermissions(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_USER);
+        $this->grantPermissions(User::ROLE_USER, 'TEST_ACTIVITY_TEAM_CREATE_ONLY', ['create_team', 'view_activity']);
+
+        $this->request($client, '/admin/activity/1/team-create');
+        $this->assertAccessDenied($client);
+    }
+
+    /**
+     * Regression test for GHSA-hvq2-5gh2-rgvv.
+     *
+     * The endpoint once looked up a team by the activity name and reused it, which made the
+     * caller a teamlead of an unrelated team that happened to share that name. A team is now
+     * always created from scratch, so an existing team with the same name must stay untouched.
+     */
+    public function testCreateTeamActionDoesNotTouchForeignTeamWithSameName(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $em = $this->getEntityManager();
+
+        /** @var Activity $activity */
+        $activity = $em->getRepository(Activity::class)->find(1);
+        $name = $activity->getName();
+        self::assertIsString($name);
+
+        // a pre-existing team with the very same name, led by somebody else
+        $victimId = $this->getUserByRole(User::ROLE_USER)->getId();
+        $foreignTeam = new Team($name);
+        $foreignTeam->addTeamlead($this->getUserByRole(User::ROLE_USER));
+        $em->persist($foreignTeam);
+        $em->flush();
+
+        $foreignTeamId = $foreignTeam->getId();
+        self::assertIsInt($foreignTeamId);
+
+        $this->assertAccessIsGranted($client, '/admin/activity/1/team-create');
+        $form = $client->getCrawler()->filter('form[name=team_edit_form]')->form();
+        $client->submit($form);
+
+        // the team name is unique, so the collision surfaces as a validation error
+        self::assertFalse($client->getResponse()->isRedirect());
+
+        $em->clear();
+
+        $reloaded = $em->getRepository(Team::class)->find($foreignTeamId);
+        self::assertInstanceOf(Team::class, $reloaded);
+
+        $memberIds = array_map(static function (User $user) { return $user->getId(); }, $reloaded->getUsers());
+        self::assertEquals([$victimId], $memberIds, 'The foreign team must not have gained a member');
+
+        $bound = [];
+        foreach ($reloaded->getActivities() as $entity) {
+            $bound[] = $entity->getId();
+        }
+        self::assertEquals([], $bound, 'The foreign team must not have been bound to the activity');
+
+        /** @var Activity $reloadedActivity */
+        $reloadedActivity = $em->getRepository(Activity::class)->find(1);
+        self::assertEquals(0, $reloadedActivity->getTeams()->count());
+    }
+
+    public function testCreateTeamAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $em = $this->getEntityManager();
+
+        /** @var Activity $activity */
+        $activity = $em->getRepository(Activity::class)->find(1);
+        self::assertEquals(0, $activity->getTeams()->count());
+
+        $this->assertAccessIsGranted($client, '/admin/activity/1/team-create');
+        $form = $client->getCrawler()->filter('form[name=team_edit_form]')->form();
+        self::assertEquals('Test', $form->get('team_edit_form[name]')->getValue());
+
+        $client->submit($form);
+
+        $location = $this->assertIsModalRedirect($client, '/admin/activity/1/details');
+        $this->requestPure($client, $location);
+        $this->assertHasFlashSuccess($client);
+
+        $em->clear();
+
+        /** @var Activity $activity */
+        $activity = $em->getRepository(Activity::class)->find(1);
+        self::assertEquals(1, $activity->getTeams()->count());
+
+        $team = $em->getRepository(Team::class)->findOneBy(['name' => 'Test']);
+        self::assertInstanceOf(Team::class, $team);
+        self::assertTrue($team->hasActivity($activity));
+
+        $teamleads = $team->getTeamleads();
+        self::assertCount(1, $teamleads);
+        self::assertEquals($this->getUserByRole(User::ROLE_ADMIN)->getId(), $teamleads[0]->getId());
+    }
+
+    public function testDeleteAction(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+        $this->request($client, '/admin/activity/1/edit');
+        self::assertTrue($client->getResponse()->isSuccessful());
+
+        $this->request($client, '/admin/activity/1/delete');
+
+        self::assertTrue($client->getResponse()->isSuccessful());
+        $form = $client->getCrawler()->filter('form[name=form]')->form();
+        self::assertStringEndsWith($this->createUrl('/admin/activity/1/delete'), $form->getUri());
+        $client->submit($form);
+
+        $client->followRedirect();
+        $this->assertHasFlashDeleteSuccess($client);
+        $this->assertHasNoEntriesWithFilter($client);
+
+        $this->request($client, '/admin/activity/1/edit');
+        self::assertFalse($client->getResponse()->isSuccessful());
+    }
+
+    public function testDeleteActionWithTimesheetEntries(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+
+        /** @var EntityManager $em */
+        $em = $this->getEntityManager();
+
+        $fixture = new TimesheetFixtures();
+        $fixture->setUser($this->getUserByRole(User::ROLE_USER));
+        $fixture->setAmount(10);
+        $this->importFixture($fixture);
+
+        $timesheets = $em->getRepository(Timesheet::class)->findAll();
+        self::assertEquals(10, \count($timesheets));
+
+        /** @var Timesheet $entry */
+        foreach ($timesheets as $entry) {
+            self::assertEquals(1, $entry->getActivity()->getId());
+        }
+
+        $this->request($client, '/admin/activity/1/delete');
+        self::assertTrue($client->getResponse()->isSuccessful());
+
+        $form = $client->getCrawler()->filter('form[name=form]')->form();
+        self::assertStringEndsWith($this->createUrl('/admin/activity/1/delete'), $form->getUri());
+        $client->submit($form);
+
+        $this->assertIsRedirect($client, $this->createUrl('/admin/activity/'));
+        $client->followRedirect();
+        $this->assertHasFlashDeleteSuccess($client);
+        $this->assertHasNoEntriesWithFilter($client);
+
+        $em->clear();
+        $timesheets = $em->getRepository(Timesheet::class)->findAll();
+        self::assertEquals(0, \count($timesheets));
+
+        $this->request($client, '/admin/activity/1/edit');
+        self::assertFalse($client->getResponse()->isSuccessful());
+    }
+
+    public function testDeleteActionWithTimesheetEntriesAndReplacement(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_ADMIN);
+
+        /** @var EntityManager $em */
+        $em = $this->getEntityManager();
+
+        $fixture = new TimesheetFixtures();
+        $fixture->setUser($this->getUserByRole(User::ROLE_USER));
+        $fixture->setAmount(10);
+        $this->importFixture($fixture);
+        $fixture = new ActivityFixtures();
+        $fixture->setAmount(1)->setIsGlobal(true)->setIsVisible(true);
+        $activities = $this->importFixture($fixture);
+        $activity = $activities[0];
+        $id = $activity->getId();
+
+        $timesheets = $em->getRepository(Timesheet::class)->findAll();
+        self::assertEquals(10, \count($timesheets));
+
+        /** @var Timesheet $entry */
+        foreach ($timesheets as $entry) {
+            self::assertEquals(1, $entry->getActivity()->getId());
+        }
+
+        $this->request($client, '/admin/activity/1/delete');
+        self::assertTrue($client->getResponse()->isSuccessful());
+
+        $form = $client->getCrawler()->filter('form[name=form]')->form();
+        self::assertStringEndsWith($this->createUrl('/admin/activity/1/delete'), $form->getUri());
+        $client->submit($form, [
+            'form' => [
+                'activity' => $id
+            ]
+        ]);
+
+        $this->assertIsRedirect($client, $this->createUrl('/admin/activity/'));
+        $client->followRedirect();
+        $this->assertHasDataTable($client);
+        $this->assertHasFlashSuccess($client);
+
+        $timesheets = $em->getRepository(Timesheet::class)->findAll();
+        self::assertEquals(10, \count($timesheets));
+
+        /** @var Timesheet $entry */
+        foreach ($timesheets as $entry) {
+            self::assertEquals($id, $entry->getActivity()->getId());
+        }
+
+        $this->request($client, '/admin/activity/1/edit');
+        self::assertFalse($client->getResponse()->isSuccessful());
+    }
+
+    #[DataProvider('getValidationTestData')]
+    public function testValidationForCreateAction(array $formData, array $validationFields): void
+    {
+        $this->assertFormHasValidationError(
+            User::ROLE_ADMIN,
+            '/admin/activity/create',
+            'form[name=activity_edit_form]',
+            $formData,
+            $validationFields
+        );
+    }
+
+    public static function getValidationTestData()
+    {
+        return [
+            [
+                [
+                    'activity_edit_form' => [
+                        'name' => '',
+                        'project' => 0,
+                    ]
+                ],
+                [
+                    '#activity_edit_form_name',
+                    '#activity_edit_form_project',
+                ]
+            ],
+        ];
+    }
+}

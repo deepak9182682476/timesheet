@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="sheet-toolbar">
+  <div class="week-nav">
+    <a class="btn" href="/timesheet?user_id={{ target.id }}&week={{ prev_week }}">Previous</a>
+    <div>
+      <strong>{{ week_text }}</strong>
+      {% if not is_current %}<a href="/timesheet?user_id={{ target.id }}">This week</a>{% endif %}
+    </div>
+    <a class="btn" href="/timesheet?user_id={{ target.id }}&week={{ next_week }}">Next</a>
+  </div>
+  {% if people|length > 1 %}
+  <form class="person-switch" method="get" action="/timesheet">
+    <input type="hidden" name="week" value="{{ week_iso }}">
+    <label>
+      Person
+      <select name="user_id" onchange="this.form.submit()">
+        {% for person in people %}
+        <option value="{{ person.id }}" {% if person.id == target.id %}selected{% endif %}>
+          {{ person.name }} · {{ person.role|role }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+</div>
+
+<section class="card sheet-card">
+  <div class="sheet-head">
+    <div>
+      <p class="eyebrow">{% if on_behalf %}On behalf of{% else %}Your week{% endif %}</p>
+      <h2>{{ target.name }}</h2>
+      <p>
+        {{ target.role|role }}
+        {% if manager %} · reports to {{ manager.name }}{% elif target.role != "admin" %} · no reporting person{% endif %}
+      </p>
+    </div>
+    <div class="sheet-total">
+      <span>Total</span>
+      <strong id="week-total">{{ week_total|hours }}</strong>
+      <em class="status status-{{ week_row.status if week_row else 'none' }}">{{ (week_row.status if week_row else none)|status }}</em>
+    </div>
+  </div>
+
+  {% if week_row and week_row.status == "submitted" %}
+  <div class="banner">Sent{% if reviewer %} to {{ reviewer.name }}{% endif %} for approval{% if week_row.submitted_at %} on {{ week_row.submitted_at|when }}{% endif %}.</div>
+  {% elif week_row and week_row.status == "approved" %}
+  <div class="banner banner-ok">Approved{% if reviewed_by %} by {{ reviewed_by.name }}{% endif %}{% if week_row.review_note %}. {{ week_row.review_note }}{% endif %}</div>
+  {% elif week_row and week_row.review_note and week_row.status in ["rejected", "draft"] %}
+  <div class="banner banner-bad">{{ reviewed_by.name if reviewed_by else "Your manager" }} sent this back: {{ week_row.review_note }}</div>
+  {% endif %}
+
+  {% if on_behalf and editable %}
+  <p class="hint">
+    {% if is_approver %}
+    You are the reporting person, so you can record these hours and approve them now.
+    {% elif manager %}
+    Saving keeps a draft. Submitting sends the week to {{ manager.name }}.
+    {% endif %}
+  </p>
+  {% elif editable and not on_behalf and manager and target.role != "admin" %}
+  <p class="hint">Save a draft any time. Submit when the week is ready for {{ manager.name }}.</p>
+  {% endif %}
+
+  {% if not projects %}
+  <p class="empty">No project IDs yet. An admin needs to add one before hours can be logged.</p>
+  {% elif editable %}
+  <form method="post" action="/timesheet" id="timesheet-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="user_id" value="{{ target.id }}">
+    <input type="hidden" name="week" value="{{ week_iso }}">
+    {% include "sheet_table.html" %}
+    <label class="note-field">
+      Note for this week
+      <textarea name="note" maxlength="500" rows="3">{{ week_row.note if week_row else "" }}</textarea>
+    </label>
+    <div class="form-actions">
+      <button class="btn" type="submit" name="action" value="save">Save draft</button>
+      {% if is_approver %}
+      <button class="btn btn-primary" type="submit" name="action" value="approve_now">Approve hours</button>
+      {% elif target.role != "admin" %}
+      <button class="btn btn-primary" type="submit" name="action" value="submit" {% if not manager %}disabled{% endif %}>Submit for approval</button>
+      {% endif %}
+    </div>
+  </form>
+  {% else %}
+  {% include "sheet_table.html" %}
+  {% if week_row.note %}<p class="hint">Note: {{ week_row.note }}</p>{% endif %}
+  {% endif %}
+
+  {% if can_decide %}
+  <form class="decision" method="post" action="/timesheet/decision">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="week_id" value="{{ week_row.id }}">
+    <label>
+      Decision note
+      <textarea name="review_note" maxlength="500" rows="3" placeholder="Required if you send it back"></textarea>
+    </label>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit" name="decision" value="approved">Approve</button>
+      <button class="btn btn-danger" type="submit" name="decision" value="rejected">Send back</button>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

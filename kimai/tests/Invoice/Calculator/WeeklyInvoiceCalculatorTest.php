@@ -1,0 +1,193 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Invoice\Calculator;
+
+use App\Entity\Activity;
+use App\Entity\Customer;
+use App\Entity\InvoiceTemplate;
+use App\Entity\Project;
+use App\Entity\Timesheet;
+use App\Entity\User;
+use App\Invoice\Calculator\AbstractCalculator;
+use App\Invoice\Calculator\AbstractMergedCalculator;
+use App\Invoice\Calculator\AbstractSumInvoiceCalculator;
+use App\Invoice\Calculator\WeeklyInvoiceCalculator;
+use App\Invoice\CalculatorInterface;
+use App\Invoice\InvoiceItem;
+use App\Repository\Query\InvoiceQuery;
+use App\Tests\Invoice\DebugFormatter;
+use App\Tests\Mocks\InvoiceModelFactoryFactory;
+use DateTime;
+use PHPUnit\Framework\Attributes\CoversClass;
+
+#[CoversClass(WeeklyInvoiceCalculator::class)]
+#[CoversClass(AbstractSumInvoiceCalculator::class)]
+#[CoversClass(AbstractMergedCalculator::class)]
+#[CoversClass(AbstractCalculator::class)]
+class WeeklyInvoiceCalculatorTest extends AbstractCalculatorTestCase
+{
+    protected function getCalculator(): CalculatorInterface
+    {
+        return new WeeklyInvoiceCalculator();
+    }
+
+    public function testWithMultipleEntries(): void
+    {
+        $customer = new Customer('foo');
+        $template = new InvoiceTemplate();
+        $template->setVat(19);
+
+        $user = $this->getMockBuilder(User::class)->onlyMethods(['getId'])->disableOriginalConstructor()->getMock();
+        $user->method('getId')->willReturn(1);
+
+        $project1 = $this->getMockBuilder(Project::class)->onlyMethods(['getId'])->disableOriginalConstructor()->getMock();
+        $project1->method('getId')->willReturn(1);
+
+        $project2 = $this->getMockBuilder(Project::class)->onlyMethods(['getId'])->disableOriginalConstructor()->getMock();
+        $project2->method('getId')->willReturn(2);
+
+        $project3 = $this->getMockBuilder(Project::class)->onlyMethods(['getId'])->disableOriginalConstructor()->getMock();
+        $project3->method('getId')->willReturn(3);
+
+        $timezone = new \DateTimeZone('Europe/Berlin');
+        $end = new \DateTime('now', $timezone);
+
+        $timesheet = new Timesheet();
+        $timesheet->setBegin(new DateTime('2018-11-26 12:00:00', $timezone));
+        $timesheet->setEnd(clone $end);
+        $timesheet->setDuration(3600);
+        $timesheet->setRate(293.27);
+        $timesheet->setUser($user);
+        $timesheet->setActivity((new Activity())->setName('sdsd'));
+        $timesheet->setProject($project1);
+
+        $timesheet2 = new Timesheet();
+        $timesheet2->setBegin(new DateTime('2018-11-26 12:00:00', $timezone));
+        $timesheet2->setEnd(clone $end);
+        $timesheet2->setDuration(400);
+        $timesheet2->setRate(84.75);
+        $timesheet2->setUser($user);
+        $timesheet2->setActivity((new Activity())->setName('bar'));
+        $timesheet2->setProject($project2);
+
+        $timesheet3 = new Timesheet();
+        $timesheet3->setBegin(new DateTime('2018-11-25 12:00:00', $timezone));
+        $timesheet3->setEnd(clone $end);
+        $timesheet3->setDuration(1800);
+        $timesheet3->setRate(111.11);
+        $timesheet3->setUser($user);
+        $timesheet3->setActivity((new Activity())->setName('foo'));
+        $timesheet3->setProject($project1);
+
+        $timesheet4 = new Timesheet();
+        $timesheet4->setBegin(new DateTime('2018-11-25 12:00:00', $timezone));
+        $timesheet4->setEnd(clone $end);
+        $timesheet4->setDuration(400);
+        $timesheet4->setRate(1947.99);
+        $timesheet4->setUser($user);
+        $timesheet4->setActivity((new Activity())->setName('blub'));
+        $timesheet4->setProject($project2);
+
+        $timesheet5 = new Timesheet();
+        $timesheet5->setBegin(new DateTime('2018-11-25 12:00:00', $timezone));
+        $timesheet5->setEnd(clone $end);
+        $timesheet5->setDuration(400);
+        $timesheet5->setRate(84);
+        $timesheet5->setUser(new User());
+        $timesheet5->setActivity(new Activity());
+        $timesheet5->setProject($project3);
+
+        $entries = [$timesheet, $timesheet2, $timesheet3, $timesheet4, $timesheet5];
+
+        $query = new InvoiceQuery();
+        $query->setProjects([$project1]);
+
+        $model = (new InvoiceModelFactoryFactory($this))->create()->createModel(new DebugFormatter(), $customer, $template, $query);
+        $model->addEntries($entries);
+
+        $sut = $this->getCalculator();
+        $sut->setModel($model);
+
+        self::assertEquals('weekly', $sut->getId());
+        self::assertEquals(3000.13, $sut->getTotal());
+        $this->assertTax($sut, 19);
+        self::assertEquals('EUR', $model->getCurrency());
+        self::assertEquals(2521.12, $sut->getSubtotal());
+        self::assertEquals(6600, $sut->getTimeWorked());
+
+        $entries = $sut->getEntries();
+        self::assertCount(2, $entries);
+        self::assertEquals(378.02, $entries[1]->getRate());
+        self::assertEquals(2143.1, $entries[0]->getRate());
+    }
+
+    public function testSameWeekNumberInDifferentYearsIsNotMerged(): void
+    {
+        // Both dates are ISO week 30, one year apart. Keying only on the week
+        // number would sum them into a single invoice entry.
+        $entries = $this->calculateEntriesForBeginDates(['2025-07-21 12:00:00', '2026-07-20 12:00:00']);
+
+        self::assertCount(2, $entries);
+    }
+
+    public function testIsoWeekSpanningTwoCalendarYearsIsMerged(): void
+    {
+        // Both dates belong to ISO week 1 of 2025, but to different calendar
+        // years. Keying on the calendar year ("Y-W") instead of the ISO
+        // week-numbering year ("o-W") would split them into two entries.
+        $entries = $this->calculateEntriesForBeginDates(['2024-12-30 12:00:00', '2025-01-02 12:00:00']);
+
+        self::assertCount(1, $entries);
+        self::assertEquals(7200, $entries[0]->getDuration());
+        self::assertEquals(200, $entries[0]->getRate());
+    }
+
+    /**
+     * @param array<string> $beginDates
+     * @return array<InvoiceItem>
+     */
+    private function calculateEntriesForBeginDates(array $beginDates): array
+    {
+        $customer = new Customer('foo');
+        $template = new InvoiceTemplate();
+        $template->setVat(19);
+        $project = (new Project())->setName('project');
+        $user = new User();
+
+        $entries = [];
+        foreach ($beginDates as $begin) {
+            $timesheet = new Timesheet();
+            $timesheet->setBegin(new DateTime($begin));
+            $timesheet->setEnd(new DateTime($begin));
+            $timesheet->setDuration(3600);
+            $timesheet->setRate(100);
+            $timesheet->setUser($user);
+            $timesheet->setActivity((new Activity())->setName('foo'));
+            $timesheet->setProject($project);
+            $entries[] = $timesheet;
+        }
+
+        $query = new InvoiceQuery();
+        $query->setProjects([$project]);
+
+        $model = (new InvoiceModelFactoryFactory($this))->create()->createModel(new DebugFormatter(), $customer, $template, $query);
+        $model->addEntries($entries);
+
+        $sut = $this->getCalculator();
+        $sut->setModel($model);
+
+        return $sut->getEntries();
+    }
+
+    public function testDescriptionByTimesheet(): void
+    {
+        $this->assertDescription($this->getCalculator(), false, false);
+    }
+}

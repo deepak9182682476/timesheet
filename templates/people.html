@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="lede">Add people, set who they report to, or remove someone who has no one reporting to them.</p>
+<div class="split">
+  <section class="card">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Role</th>
+            <th>Reports to</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in people %}
+          <tr>
+            <td>
+              <strong>{{ person.name }}</strong>
+              <span class="muted">{{ person.email }}</span>
+            </td>
+            <td>{{ person.role|role }}</td>
+            <td>{{ person.manager_name or "—" }}</td>
+            <td class="row-actions">
+              <a href="/people?edit={{ person.id }}">Edit</a>
+              {% if person.id != user.id %}
+              <form method="post" action="/people/{{ person.id }}/delete" data-confirm="Delete {{ person.name }} and their timesheets?">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="text-btn danger" type="submit">Delete</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card form-card">
+    <h2>{% if editing %}Edit {{ editing.name }}{% else %}Add a person{% endif %}</h2>
+    <form method="post" action="{% if editing %}/people/{{ editing.id }}{% else %}/people{% endif %}" id="person-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>
+        Name
+        <input name="name" required maxlength="80" value="{{ editing.name if editing else '' }}">
+      </label>
+      <label>
+        Email
+        <input name="email" type="email" required value="{{ editing.email if editing else '' }}">
+      </label>
+      <label>
+        {% if editing %}New password{% else %}Password{% endif %}
+        <input name="password" type="text" {% if not editing %}required{% endif %} minlength="6" autocomplete="off" placeholder="{% if editing %}Leave blank to keep the current password{% endif %}">
+      </label>
+      <label>
+        Role
+        <select name="role" id="role">
+          {% for role in role_order %}
+          <option value="{{ role }}" {% if editing and editing.role == role %}selected{% elif not editing and role == 'employee' %}selected{% endif %}>{{ role|role }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label id="manager-field">
+        Reports to
+        <select name="reports_to_id" id="reports_to">
+          <option value="">Choose a person</option>
+          {% for manager in managers %}
+          {% if not editing or manager.id != editing.id %}
+          <option
+            value="{{ manager.id }}"
+            data-roles="{{ reporting_targets.get(manager.role, '') }}"
+            {% if editing and editing.reports_to_id == manager.id %}selected{% endif %}
+          >{{ manager.name }} · {{ manager.role|role }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">{% if editing %}Save changes{% else %}Add person{% endif %}</button>
+        {% if editing %}<a class="btn" href="/people">Cancel</a>{% endif %}
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

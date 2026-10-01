@@ -1,0 +1,383 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Repository\Query;
+
+use App\Entity\Activity;
+use App\Entity\Bookmark;
+use App\Entity\Customer;
+use App\Entity\Project;
+use App\Entity\Team;
+use App\Form\Model\DateRange;
+use App\Repository\Query\ActivityQuery;
+use App\Repository\Query\BaseQuery;
+use App\Repository\Query\DateRangeInterface;
+use App\Repository\Query\TimesheetQuery;
+use App\Repository\Query\VisibilityInterface;
+use App\Utils\SearchTerm;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Form\DataMapperInterface;
+use Symfony\Component\Form\FormBuilder;
+use Symfony\Component\Form\FormError;
+use Symfony\Component\Form\FormFactoryInterface;
+
+#[CoversClass(BaseQuery::class)]
+class BaseQueryTest extends TestCase
+{
+    public function testQuery(): void
+    {
+        $this->assertBaseQuery(new BaseQuery());
+        $this->assertResetByFormError(new BaseQuery());
+        $this->assertFilter(new BaseQuery());
+    }
+
+    protected function assertResetByFormError(BaseQuery $sut, $orderBy = 'id', $order = 'ASC'): void
+    {
+        $sut->setOrder('ASK');
+        $sut->setOrderBy('foo');
+        $sut->setPage(99);
+        $sut->setPageSize(99);
+        $sut->setSearchTerm(new SearchTerm('sdf'));
+
+        $this->resetByFormError($sut, ['order', 'orderBy', 'page', 'size', 'searchTerm']);
+
+        self::assertEquals(1, $sut->getPage());
+        self::assertEquals(50, $sut->getPageSize());
+        self::assertEquals($order, $sut->getOrder());
+        self::assertEquals($orderBy, $sut->getOrderBy());
+        self::assertNull($sut->getSearchTerm());
+    }
+
+    protected function assertBaseQuery(BaseQuery $sut, $orderBy = 'id', $order = BaseQuery::ORDER_ASC): void
+    {
+        $this->assertPage($sut);
+        $this->assertPageSize($sut);
+        $this->assertOrderBy($sut, $orderBy);
+        $this->assertOrder($sut, $order);
+        $this->assertTeams($sut);
+        $this->assertBookmark($sut);
+    }
+
+    private function getFormBuilder(string $name): FormBuilder
+    {
+        return new FormBuilder($name, null, new EventDispatcher(), $this->createMock(FormFactoryInterface::class), []);
+    }
+
+    protected function resetByFormError(BaseQuery $sut, array $invalidFields): void
+    {
+        $formBuilder = $this->getFormBuilder('form');
+        $formBuilder->setCompound(true);
+        $formBuilder->setDataMapper($this->createMock(DataMapperInterface::class));
+
+        $form = $formBuilder->getForm();
+
+        foreach ($invalidFields as $fieldName) {
+            $form->add($this->getFormBuilder($fieldName)->getForm());
+        }
+
+        $form->submit([]);
+
+        foreach ($invalidFields as $fieldName) {
+            $form->get($fieldName)->addError(new FormError('Failed'));
+        }
+
+        $formErrors = $form->getErrors(true);
+
+        $sut->resetByFormError($formErrors);
+    }
+
+    protected function assertTeams(BaseQuery $sut): void
+    {
+        self::assertEmpty($sut->getTeams());
+
+        self::assertInstanceOf(BaseQuery::class, $sut->addTeam(new Team('foo')));
+        self::assertEquals(1, \count($sut->getTeams()));
+
+        $sut->setTeams(null);
+        self::assertEmpty($sut->getTeams());
+        $sut->setTeams([]);
+        self::assertEmpty($sut->getTeams());
+
+        $team = new Team('foo');
+        self::assertInstanceOf(BaseQuery::class, $sut->setTeams([$team]));
+        self::assertCount(1, $sut->getTeams());
+        self::assertSame($team, $sut->getTeams()[0]);
+    }
+
+    protected function assertFilter(BaseQuery $sut): void
+    {
+        self::assertEquals(0, $sut->countFilter());
+        $sut->setSearchTerm(new SearchTerm('sdfsdf'));
+        self::assertEquals(1, $sut->countFilter());
+        $sut->setPageSize(22);
+        self::assertEquals(2, $sut->countFilter());
+        $sut->setPage(2);
+        self::assertEquals(2, $sut->countFilter());
+        $sut->setOrderBy('foo');
+        self::assertEquals(3, $sut->countFilter());
+        $sut->setOrder(BaseQuery::ORDER_DESC);
+        self::assertEquals(4, $sut->countFilter());
+        $sut->setOrder(BaseQuery::ORDER_ASC);
+        self::assertEquals(3, $sut->countFilter());
+        $sut->setOrder(BaseQuery::ORDER_DESC);
+        self::assertEquals(4, $sut->countFilter());
+
+        self::assertTrue($sut->matchesFilter('page', 2));
+        self::assertFalse($sut->isDefaultFilter('page'));
+
+        $sut->resetFilter();
+        self::assertEquals(0, $sut->countFilter());
+
+        self::assertEquals(1, $sut->getPage());
+        self::assertTrue($sut->matchesFilter('page', 1));
+        self::assertTrue($sut->isDefaultFilter('page'));
+        self::assertFalse($sut->isDefaultFilter('foo'));
+    }
+
+    protected function assertBookmark(BaseQuery $sut): void
+    {
+        $bookmark = new Bookmark();
+        self::assertNull($sut->getBookmark());
+        self::assertFalse($sut->hasBookmark());
+        $sut->setBookmark($bookmark);
+        self::assertSame($bookmark, $sut->getBookmark());
+        self::assertTrue($sut->hasBookmark());
+        self::assertFalse($sut->isBookmarkSearch());
+        $sut->flagAsBookmarkSearch();
+        self::assertTrue($sut->isBookmarkSearch());
+    }
+
+    protected function assertPage(BaseQuery $sut): void
+    {
+        self::assertEquals(1, $sut->getPage());
+
+        $sut->setPage(42);
+        self::assertEquals(42, $sut->getPage());
+    }
+
+    protected function assertPageSize(BaseQuery $sut): void
+    {
+        self::assertEquals(BaseQuery::DEFAULT_PAGESIZE, $sut->getPageSize());
+
+        $sut->setPageSize(100);
+        self::assertEquals(100, $sut->getPageSize());
+    }
+
+    protected function assertOrderBy(BaseQuery $sut, $column = 'id'): void
+    {
+        self::assertEquals($column, $sut->getOrderBy());
+
+        $sut->setOrderBy('foo');
+        self::assertEquals('foo', $sut->getOrderBy());
+    }
+
+    protected function assertOrder(BaseQuery $sut, $order = BaseQuery::ORDER_ASC): void
+    {
+        self::assertEquals($order, $sut->getOrder());
+
+        $sut->setOrder('foo');
+        self::assertEquals($order, $sut->getOrder());
+
+        $sut->setOrder(BaseQuery::ORDER_ASC);
+        self::assertEquals(BaseQuery::ORDER_ASC, $sut->getOrder());
+
+        $sut->setOrder(BaseQuery::ORDER_DESC);
+        self::assertEquals(BaseQuery::ORDER_DESC, $sut->getOrder());
+    }
+
+    protected function assertSearchTerm(BaseQuery $sut): void
+    {
+        self::assertNull($sut->getSearchTerm());
+
+        $sut->setSearchTerm(null);
+        self::assertNull($sut->getSearchTerm());
+
+        $term = new SearchTerm('foo bar');
+        $sut->setSearchTerm($term);
+
+        self::assertNotNull($sut->getSearchTerm());
+        self::assertEquals('foo bar', $term->getOriginalSearch());
+        self::assertSame($term, $sut->getSearchTerm());
+    }
+
+    protected function assertActivity(TimesheetQuery $sut): void
+    {
+        self::assertEquals([], $sut->getActivities());
+        self::assertFalse($sut->hasActivities());
+
+        $expected = new Activity();
+        $expected->setName('foo-bar');
+
+        $sut->addActivity($expected);
+        self::assertEquals([$expected], $sut->getActivities());
+        self::assertTrue($sut->hasActivities());
+
+        $expected2 = new Activity();
+        $expected2->setName('foo-bar2');
+
+        $sut->addActivity($expected2);
+        self::assertEquals([$expected, $expected2], $sut->getActivities());
+
+        $sut->setActivities([]);
+        self::assertEquals([], $sut->getActivities());
+        self::assertFalse($sut->hasActivities());
+
+        $activity = $this->createMock(Activity::class);
+        $activity->method('getId')->willReturn(13);
+        $sut->addActivity($activity);
+
+        $activity = $this->createMock(Activity::class);
+        $activity->method('getId')->willReturn(27);
+        $sut->addActivity($activity);
+
+        $activity = $this->createMock(Activity::class);
+        $activity->method('getId')->willReturn(null);
+        $sut->addActivity($activity);
+
+        $activity = $this->createMock(Activity::class);
+        $activity->method('getId')->willReturn(27);
+        $sut->addActivity($activity);
+
+        $ids = [];
+        foreach ($sut->getActivities() as $activity) {
+            $ids[] = $activity->getId();
+        }
+        self::assertEquals([13, 27, null, 27], $ids);
+    }
+
+    protected function assertCustomer(BaseQuery $sut): void
+    {
+        self::assertTrue(method_exists($sut, 'getCustomers'));
+        self::assertTrue(method_exists($sut, 'setCustomers'));
+        self::assertTrue(method_exists($sut, 'hasCustomers'));
+        self::assertTrue(method_exists($sut, 'addCustomer'));
+        self::assertTrue(method_exists($sut, 'getCustomerIds'));
+
+        self::assertEquals([], $sut->getCustomers());
+        self::assertFalse($sut->hasCustomers());
+
+        $expected = new Customer('foo-bar');
+
+        $sut->addCustomer($expected);
+        self::assertEquals([$expected], $sut->getCustomers());
+        self::assertTrue($sut->hasCustomers());
+
+        $expected2 = new Customer('foo-bar2');
+
+        $sut->addCustomer($expected2);
+        self::assertEquals([$expected, $expected2], $sut->getCustomers());
+        self::assertEquals([], $sut->getCustomerIds());
+
+        $sut->setCustomers([]);
+        self::assertEquals([], $sut->getCustomers());
+        self::assertFalse($sut->hasCustomers());
+
+        $customer = $this->createMock(Customer::class);
+        $customer->method('getId')->willReturn(13);
+        $sut->addCustomer($customer);
+
+        $customer = $this->createMock(Customer::class);
+        $customer->method('getId')->willReturn(27);
+        $sut->addCustomer($customer);
+
+        $customer = $this->createMock(Customer::class);
+        $customer->method('getId')->willReturn(null);
+        $sut->addCustomer($customer);
+
+        $customer = $this->createMock(Customer::class);
+        $customer->method('getId')->willReturn(27);
+        $sut->addCustomer($customer);
+
+        self::assertEquals([13, 27], $sut->getCustomerIds());
+    }
+
+    protected function assertProject(ActivityQuery $sut): void
+    {
+        self::assertEquals([], $sut->getProjects());
+        self::assertFalse($sut->hasProjects());
+
+        $expected = new Project();
+        $expected->setName('foo-bar');
+
+        $sut->setProjects([]);
+        self::assertEquals([], $sut->getProjects());
+
+        $sut->addProject($expected);
+        self::assertEquals([$expected], $sut->getProjects());
+        self::assertTrue($sut->hasProjects());
+
+        $expected2 = new Project();
+        $expected2->setName('foo-bar2');
+
+        $sut->addProject($expected2);
+        self::assertEquals([$expected, $expected2], $sut->getProjects());
+        self::assertEquals([], $sut->getProjectIds());
+
+        $sut->setProjects([]);
+        self::assertFalse($sut->hasProjects());
+
+        $project = $this->createMock(Project::class);
+        $project->method('getId')->willReturn(13);
+        $sut->addProject($project);
+
+        $project = $this->createMock(Project::class);
+        $project->method('getId')->willReturn(27);
+        $sut->addProject($project);
+
+        $project = $this->createMock(Project::class);
+        $project->method('getId')->willReturn(null);
+        $sut->addProject($project);
+
+        $project = $this->createMock(Project::class);
+        $project->method('getId')->willReturn(27);
+        $sut->addProject($project);
+
+        self::assertEquals([13, 27], $sut->getProjectIds());
+    }
+
+    protected function assertVisibility(VisibilityInterface $sut): void
+    {
+        self::assertEquals(VisibilityInterface::SHOW_VISIBLE, $sut->getVisibility());
+
+        $sut->setVisibility(VisibilityInterface::SHOW_BOTH);
+        self::assertEquals(VisibilityInterface::SHOW_BOTH, $sut->getVisibility());
+
+        $sut->setVisibility(VisibilityInterface::SHOW_HIDDEN);
+        self::assertEquals(VisibilityInterface::SHOW_HIDDEN, $sut->getVisibility());
+
+        $sut->setVisibility(VisibilityInterface::SHOW_VISIBLE);
+        self::assertEquals(VisibilityInterface::SHOW_VISIBLE, $sut->getVisibility());
+    }
+
+    protected function assertDateRangeTrait(DateRangeInterface $sut): void
+    {
+        self::assertNull($sut->getBegin());
+        self::assertNull($sut->getEnd());
+
+        $dateRange = new DateRange();
+        $sut->setDateRange($dateRange);
+
+        self::assertSame($dateRange, $sut->getDateRange());
+        self::assertNull($sut->getBegin());
+        self::assertNull($sut->getEnd());
+
+        $dateRange->setBegin(new \DateTimeImmutable('2013-11-23 13:45:07'));
+        $dateRange->setEnd(new \DateTimeImmutable('2014-01-01 23:45:11'));
+
+        $begin1 = new \DateTimeImmutable('2013-11-23 00:00:00');
+        $end1 = new \DateTimeImmutable('2014-01-01 23:59:59');
+
+        self::assertEquals($begin1, $sut->getDateRange()->getBegin());
+        self::assertEquals($begin1, $sut->getBegin());
+        self::assertEquals($end1, $sut->getDateRange()->getEnd());
+        self::assertEquals($end1, $sut->getEnd());
+    }
+}

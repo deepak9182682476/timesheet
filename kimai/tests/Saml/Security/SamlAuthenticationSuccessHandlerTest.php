@@ -1,0 +1,116 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\Saml\Security;
+
+use App\Entity\User;
+use App\Saml\SamlToken;
+use App\Saml\Security\SamlAuthenticationSuccessHandler;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Component\Security\Http\HttpUtils;
+
+#[CoversClass(SamlAuthenticationSuccessHandler::class)]
+class SamlAuthenticationSuccessHandlerTest extends TestCase
+{
+    public function testRelayStateWithInvalidHost(): void
+    {
+        $handler = new SamlAuthenticationSuccessHandler(new HttpUtils($this->getUrlGenerator(['homepage' => 'http://example.com/'])));
+        $response = $handler->onAuthenticationSuccess($this->getRequest('http://example.com/sso/login', 'https://localhost/relayed'), $this->getSamlToken());
+        self::assertInstanceOf(RedirectResponse::class, $response);
+        $target = $response->getTargetUrl();
+        $expected = 'http://example.com/';
+        self::assertEquals($expected, $target);
+        self::assertTrue($response->isRedirect($target));
+    }
+
+    public function testRelayState(): void
+    {
+        $handler = new SamlAuthenticationSuccessHandler(new HttpUtils($this->getUrlGenerator()));
+        $response = $handler->onAuthenticationSuccess($this->getRequest('/sso/login', '/relayed'), $this->getSamlToken());
+        self::assertInstanceOf(RedirectResponse::class, $response);
+        $target = $response->getTargetUrl();
+        $expected = 'http://localhost/relayed';
+        self::assertEquals($expected, $target);
+        self::assertTrue($response->isRedirect($target));
+    }
+
+    public function testRelayStateWithFullUrls(): void
+    {
+        $handler = new SamlAuthenticationSuccessHandler(new HttpUtils($this->getUrlGenerator()));
+        $response = $handler->onAuthenticationSuccess($this->getRequest('http://example.com/sso/login', 'http://example.com/relayed/123'), $this->getSamlToken());
+        self::assertInstanceOf(RedirectResponse::class, $response);
+        $target = $response->getTargetUrl();
+        $expected = 'http://example.com/relayed/123';
+        self::assertEquals($expected, $target);
+        self::assertTrue($response->isRedirect($target));
+    }
+
+    public function testWithoutRelayState(): void
+    {
+        $httpUtils = new HttpUtils($this->getUrlGenerator(['homepage' => '/homepage']));
+        $handler = new SamlAuthenticationSuccessHandler($httpUtils);
+        $defaultTargetPath = $httpUtils->generateUri($this->getRequest('/sso/login'), 'homepage');
+        $response = $handler->onAuthenticationSuccess($this->getRequest(), $this->getSamlToken());
+        self::assertInstanceOf(RedirectResponse::class, $response);
+        self::assertTrue($response->isRedirect($defaultTargetPath));
+    }
+
+    public function testRelayStateLoop(): void
+    {
+        $httpUtils = new HttpUtils($this->getUrlGenerator());
+        $handler = new SamlAuthenticationSuccessHandler($httpUtils);
+        $loginPath = $httpUtils->generateUri($this->getRequest('/sso/login'), '/login');
+        $response = $handler->onAuthenticationSuccess($this->getRequest($loginPath), $this->getSamlToken());
+        self::assertInstanceOf(RedirectResponse::class, $response);
+        self::assertTrue(!$response->isRedirect($loginPath));
+    }
+
+    private function getUrlGenerator(array $rules = []): UrlGeneratorInterface
+    {
+        $urlGenerator = $this->getMockBuilder(UrlGeneratorInterface::class)->getMock();
+        $urlGenerator
+            ->expects($this->any())
+            ->method('generate')
+            ->willReturnCallback(function ($name) use ($rules) {
+                if (\array_key_exists($name, $rules)) {
+                    return $rules[$name];
+                }
+
+                return (string) $name;
+            })
+        ;
+
+        return $urlGenerator;
+    }
+
+    private function getRequest(string $path = '/', ?string $relayState = null): Request
+    {
+        $params = [];
+        if (null !== $relayState) {
+            $params['RelayState'] = $relayState;
+        }
+
+        return Request::create($path, 'post', $params);
+    }
+
+    private function getSamlToken(): SamlToken
+    {
+        $user = new User();
+        $user->setUserIdentifier('admin');
+
+        $token = new SamlToken($user, 'secured_area', []);
+        $token->setAttributes(['foo' => 'bar']);
+
+        return $token;
+    }
+}

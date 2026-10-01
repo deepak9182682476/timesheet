@@ -1,0 +1,25 @@
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+@media print{
+    .sf-toolbar, .control-sidebar, .navbar-vertical {
+        display: none !important;
+    }
+    .col-print-12{
+        width:100%;
+    }
+    .content-wrapper {
+        margin: 0!important;
+    }
+    span i.dot {
+        display: none;
+        margin-right: 0!important;
+    }
+    .float-help {
+        display: none;
+    }
+}

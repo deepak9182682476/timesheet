@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block content %}
+{% if user.role == "admin" %}
+<p class="lede">Add project IDs, manage people, and see hours across the company.</p>
+<section class="stats">
+  <article class="stat">
+    <span>People</span>
+    <strong>{{ stats.people }}</strong>
+  </article>
+  <article class="stat">
+    <span>Active projects</span>
+    <strong>{{ stats.projects }}</strong>
+  </article>
+  <article class="stat">
+    <span>Logged this week</span>
+    <strong>{{ stats.week_hours|hours }}<small>h</small></strong>
+  </article>
+  <article class="stat">
+    <span>Pending approvals</span>
+    <strong>{{ pending_count }}</strong>
+  </article>
+</section>
+<div class="actions">
+  <a class="btn btn-primary" href="/people">Add a person</a>
+  <a class="btn" href="/projects">Add a project ID</a>
+</div>
+{% elif user.role == "employee" %}
+<p class="lede">Log your hours for {{ week_label }}. A submitted week goes to {% if manager %}{{ manager.name }}{% else %}your reporting person{% endif %}.</p>
+<section class="hero-grid">
+  <article class="card hero">
+    <p class="eyebrow">This week</p>
+    <h2>{{ own_hours|hours }} hours</h2>
+    <p class="status status-{{ own_week.status if own_week else 'none' }}">{{ (own_week.status if own_week else none)|status }}</p>
+    {% if own_week and own_week.review_note and own_week.status == "rejected" %}
+    <p class="note">{{ own_week.review_note }}</p>
+    {% endif %}
+    <a class="btn btn-primary" href="/timesheet">
+      {% if not own_week %}Enter this week{% elif own_week.status == "rejected" %}Update and resubmit{% elif own_week.status == "draft" %}Continue timesheet{% else %}View timesheet{% endif %}
+    </a>
+  </article>
+  <article class="card">
+    <p class="eyebrow">Reports to</p>
+    <h2>{% if manager %}{{ manager.name }}{% else %}Not assigned{% endif %}</h2>
+    <p>{% if manager %}{{ manager.role|role }}{% else %}Ask an admin to set your reporting person before you submit.{% endif %}</p>
+  </article>
+</section>
+{% else %}
+<p class="lede">
+  {% if user.role == "project_manager" %}
+  Your week, everyone who reports to you, and the timesheets waiting on you.
+  {% else %}
+  Your week, and timesheets for the employees mapped to you.
+  {% endif %}
+</p>
+<section class="stats">
+  <article class="stat">
+    <span>Your hours</span>
+    <strong>{{ own_hours|hours }}<small>h</small></strong>
+    <em class="status status-{{ own_week.status if own_week else 'none' }}">{{ (own_week.status if own_week else none)|status }}</em>
+  </article>
+  <article class="stat">
+    <span>Team logged</span>
+    <strong>{{ team_hours|hours }}<small>h</small></strong>
+    <em>{{ week_label }}</em>
+  </article>
+  <article class="stat">
+    <span>Waiting on you</span>
+    <strong>{{ pending_count }}</strong>
+  </article>
+</section>
+<div class="actions">
+  <a class="btn btn-primary" href="/timesheet">Enter your timesheet</a>
+  {% if pending_count %}<a class="btn" href="/approvals">Review approvals</a>{% endif %}
+</div>
+{% endif %}
+
+{% if waiting %}
+<section class="card section">
+  <div class="section-head">
+    <h2>Needs a decision</h2>
+    <a href="/approvals">View all</a>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Person</th>
+          <th>Role</th>
+          <th>Week</th>
+          <th>Hours</th>
+          {% if user.role == "admin" %}<th>Approver</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in waiting %}
+        <tr>
+          <td>{{ row.user_name }}</td>
+          <td>{{ row.user_role|role }}</td>
+          <td>{{ row.week_start|week }}</td>
+          <td>{{ row.hours|hours }}</td>
+          {% if user.role == "admin" %}<td>{{ row.manager_name or "—" }}</td>{% endif %}
+          <td><a href="/timesheet?user_id={{ row.user_id }}&week={{ row.week_start }}">Review</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if tree %}
+<section class="card section">
+  <div class="section-head">
+    <h2>People reporting to you</h2>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Role</th>
+          <th>This week</th>
+          <th>Hours</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for node in tree %}
+        {% set summary = summaries.get(node.user.id) %}
+        <tr>
+          <td>
+            <span class="indent" style="--depth: {{ node.depth }}">{{ node.user.name }}</span>
+          </td>
+          <td>{{ node.user.role|role }}</td>
+          <td><span class="status status-{{ summary.status if summary else 'none' }}">{{ (summary.status if summary else none)|status }}</span></td>
+          <td>{{ (summary.hours if summary else 0)|hours }}</td>
+          <td><a href="/timesheet?user_id={{ node.user.id }}&week={{ week_start.isoformat() }}">Enter time</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if history and user.role != "admin" %}
+<section class="card section">
+  <div class="section-head">
+    <h2>Your recent weeks</h2>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Week</th>
+          <th>Status</th>
+          <th>Hours</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in history %}
+        <tr>
+          <td>{{ row.week_start|week }}</td>
+          <td><span class="status status-{{ row.status }}">{{ row.status|status }}</span></td>
+          <td>{{ row.hours|hours }}</td>
+          <td><a href="/timesheet?week={{ row.week_start }}">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

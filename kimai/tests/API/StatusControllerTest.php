@@ -1,0 +1,95 @@
+<?php
+
+/*
+ * This file is part of the Kimai time-tracking app.
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace App\Tests\API;
+
+use App\Constants;
+use App\Entity\User;
+use PHPUnit\Framework\Attributes\Group;
+
+#[Group('integration')]
+class StatusControllerTest extends APIControllerBaseTestCase
+{
+    public function testIsSecurePing(): void
+    {
+        $this->assertUrlIsSecured('/api/ping');
+    }
+
+    public function testIsSecureVersion(): void
+    {
+        $this->assertUrlIsSecured('/api/version');
+    }
+
+    public function testIsSecurePlugins(): void
+    {
+        $this->assertUrlIsSecured('/api/plugins');
+    }
+
+    public function testPing(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_USER);
+        $this->assertAccessIsGranted($client, '/api/ping');
+        $result = json_decode($client->getResponse()->getContent(), true);
+
+        self::assertIsArray($result);
+        self::assertEquals(['message' => 'pong'], $result);
+    }
+
+    public function testVersion(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_USER);
+        $this->assertAccessIsGranted($client, '/api/version');
+        $result = json_decode($client->getResponse()->getContent(), true);
+
+        self::assertIsArray($result);
+
+        self::assertArrayHasKey('version', $result);
+        self::assertArrayHasKey('versionId', $result);
+        self::assertArrayHasKey('copyright', $result);
+
+        self::assertSame(Constants::VERSION, $result['version']);
+        self::assertSame(Constants::VERSION_ID, $result['versionId']);
+        self::assertEquals(
+            Constants::SOFTWARE . ' ' . Constants::VERSION,
+            $result['copyright']
+        );
+    }
+
+    public function testPlugins(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_USER);
+        $this->assertAccessIsGranted($client, '/api/plugins');
+        $result = json_decode($client->getResponse()->getContent(), true);
+
+        self::assertIsArray($result);
+        // no asserts, as plugins are disabled in tests
+    }
+
+    public function testCorsExposesPaginationHeaders(): void
+    {
+        $client = $this->getClientForAuthenticatedUser(User::ROLE_USER);
+        $client->request('GET', '/api/ping', [], [], ['HTTP_ORIGIN' => 'http://example.com']);
+
+        $response = $client->getResponse();
+        self::assertTrue($response->isSuccessful());
+
+        $expose = $response->headers->get('Access-Control-Expose-Headers');
+        self::assertNotNull($expose, 'Missing "Access-Control-Expose-Headers" response header');
+
+        // Header values are case-insensitive; the test client lowercases them
+        $exposeLower = strtolower($expose);
+        foreach (['x-page', 'x-total-count', 'x-total-pages', 'x-per-page'] as $header) {
+            self::assertStringContainsString(
+                $header,
+                $exposeLower,
+                \sprintf('Pagination header "%s" is not exposed via CORS', $header)
+            );
+        }
+    }
+}

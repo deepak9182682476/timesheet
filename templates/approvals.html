@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="lede">
+  {% if user.role == "admin" %}
+  Every submitted week. The named approver is the person's reporting manager. You can approve any of them.
+  {% else %}
+  Weeks your team has submitted to you.
+  {% endif %}
+</p>
+{% if not rows %}
+<section class="card empty-card">
+  <h2>Nothing waiting</h2>
+  <p>When someone who reports to you submits a week, it will show up here.</p>
+</section>
+{% else %}
+<section class="card">
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Person</th>
+          <th>Role</th>
+          <th>Week</th>
+          <th>Hours</th>
+          <th>Submitted</th>
+          {% if user.role == "admin" %}<th>Approver</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.user_name }}</td>
+          <td>{{ row.user_role|role }}</td>
+          <td>{{ row.week_start|week }}</td>
+          <td>{{ row.hours|hours }}</td>
+          <td>{{ row.submitted_at|when }}</td>
+          {% if user.role == "admin" %}<td>{{ row.manager_name or "—" }}</td>{% endif %}
+          <td><a class="btn" href="/timesheet?user_id={{ row.user_id }}&week={{ row.week_start }}">Review</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
