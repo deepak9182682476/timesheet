@@ -30,8 +30,9 @@ services:
       MAILER_URL: null://null
       MAILER_FROM: timesheet@localhost
       DEFAULT_URI: http://localhost:8001
-      TRUSTED_HOSTS: localhost|127.0.0.1
-      CORS_ALLOW_ORIGIN: ^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$
+      TRUSTED_HOSTS: localhost|127\.0\.0\.1|192\.168\.0\.17|.+\.trycloudflare\.com
+      TRUSTED_PROXIES: 127.0.0.1,REMOTE_ADDR
+      CORS_ALLOW_ORIGIN: ^https?://(localhost|127\.0\.0\.1|192\.168\.0\.17|.+\.trycloudflare\.com)(:[0-9]+)?$
     restart: unless-stopped
 
 volumes:

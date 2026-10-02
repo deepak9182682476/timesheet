@@ -16,6 +16,7 @@ framework:
 
     trusted_proxies: '%env(string:TRUSTED_PROXIES)%'
     trusted_hosts: '%env(string:TRUSTED_HOSTS)%'
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port']
 
     exceptions:
         App\Validator\ValidationFailedException:

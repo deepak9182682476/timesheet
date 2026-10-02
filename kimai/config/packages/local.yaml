@@ -2,3 +2,16 @@ kimai:
     theme:
         branding:
             company: 'AMI Paradigm'
+
+framework:
+    trusted_hosts:
+        - 'localhost'
+        - '127\.0\.0\.1'
+        - '192\.168\.0\.17'
+        - '.+\.trycloudflare\.com'
+    trusted_proxies: '127.0.0.1,REMOTE_ADDR'
+    trusted_headers:
+        - 'x-forwarded-for'
+        - 'x-forwarded-host'
+        - 'x-forwarded-proto'
+        - 'x-forwarded-port'
