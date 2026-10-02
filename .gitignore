@@ -4,4 +4,4 @@ __pycache__/
 data/*.db
 data/secret.key
 .pytest_cache/
-kimai/.env
+AMI Paradigm/.env
