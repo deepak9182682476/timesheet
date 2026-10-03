@@ -15,6 +15,7 @@
     {% else %}
         {{ encore_entry_link_tags('app') }}
     {% endif %}
+    <link rel="stylesheet" href="{{ asset('background.css') }}">
     {% set event = trigger(constant('App\\Event\\ThemeEvent::STYLESHEET')) %}
     {{ event.content|raw }}
 {% endblock %}
