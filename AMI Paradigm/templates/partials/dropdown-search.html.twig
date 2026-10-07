@@ -1,0 +1,58 @@
+{#
+    Dropdown lists (project, phase, activity, task ...):
+    - the empty first row is hidden, so the list starts with the first real choice
+      (an optional field is cleared with the Backspace key instead)
+    - a search bar sits on top of the list. Typing always filtered the list already, but nothing showed that:
+      the bar shows what is being typed. The keyboard stays in the field itself, the bar only mirrors it.
+    Registered once for the whole page, so it also covers forms opened in a pop-up.
+#}
+<style>
+    .ts-dropdown .option[data-value=""] { display: none; }
+    .ts-dropdown .dropdown-search { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid var(--tblr-border-color); color: var(--tblr-secondary); }
+    .ts-dropdown .dropdown-search .dropdown-search-text { flex: 1; min-height: 1.25rem; padding: .25rem .5rem; border: 1px solid var(--tblr-border-color); border-radius: var(--tblr-border-radius); background: var(--tblr-bg-forms, #fff); color: var(--tblr-body-color); cursor: text; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ts-dropdown .dropdown-search .dropdown-search-text.is-empty { color: var(--tblr-secondary); }
+</style>
+<script type="text/javascript">
+    (function () {
+        if (window.__dropdownSearch) { return; }
+        window.__dropdownSearch = true;
+
+        function instance(input) {
+            var wrapper = input.closest('.ts-wrapper');
+            if (wrapper === null) { return null; }
+            var select = wrapper.previousElementSibling;
+            return (select !== null && select.tomselect !== undefined) ? select.tomselect : null;
+        }
+
+        function show(input) {
+            var ts = instance(input);
+            if (ts === null || !ts.dropdown) { return; }
+            var bar = ts.dropdown.querySelector('.dropdown-search');
+            if (bar === null) {
+                bar = document.createElement('div');
+                bar.className = 'dropdown-search';
+                bar.innerHTML = '<i class="fas fa-search"></i><span class="dropdown-search-text"></span>';
+                // a click on the bar must not take the keyboard away from the field
+                bar.addEventListener('mousedown', function (event) { event.preventDefault(); event.stopPropagation(); input.focus(); });
+                ts.dropdown.insertBefore(bar, ts.dropdown.firstChild);
+            }
+            var text = bar.querySelector('.dropdown-search-text');
+            text.textContent = input.value !== '' ? input.value : 'Type to search…';
+            text.classList.toggle('is-empty', input.value === '');
+        }
+
+        ['focusin', 'input', 'keyup', 'click'].forEach(function (type) {
+            document.addEventListener(type, function (event) {
+                var el = event.target;
+                if (el.matches && el.matches('.ts-control input')) { show(el); return; }
+                if (type === 'click' && el.closest) {
+                    var control = el.closest('.ts-control');
+                    if (control !== null) {
+                        var input = control.querySelector('input');
+                        if (input !== null) { show(input); }
+                    }
+                }
+            }, true);
+        });
+    })();
+</script>

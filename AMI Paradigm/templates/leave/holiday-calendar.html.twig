@@ -1,0 +1,17 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">AMIP Holiday calendar</h3>
+            <div class="card-actions">
+                <a href="{{ path('holiday_calendar_image') }}" target="_blank" class="btn">Open full size</a>
+            </div>
+        </div>
+        <div class="card-body text-center" style="overflow-x: auto;">
+            {# the white background keeps the table readable in the dark theme #}
+            <img src="{{ path('holiday_calendar_image') }}" alt="AMIP Holiday calendar 2026: national and festival holidays by office location"
+                 style="max-width: 100%; min-width: 640px; height: auto; background: #fff;">
+        </div>
+    </div>
+{% endblock %}

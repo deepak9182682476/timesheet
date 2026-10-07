@@ -1,0 +1,19 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    {% set formOptions = {
+        'title': (phase.id is null ? 'Add a phase' : 'Edit phase'),
+        'form': form,
+        'back': path('admin_phase')
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% form_theme form 'form/horizontal.html.twig' %}
+        {% block form_body %}
+            {{ form_row(form.name) }}
+            {{ form_row(form.project) }}
+            {{ form_row(form.activities) }}
+            {{ form_row(form.position) }}
+            {{ form_rest(form) }}
+        {% endblock %}
+    {% endembed %}
+{% endblock %}

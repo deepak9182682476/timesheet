@@ -30,6 +30,8 @@ final class TimesheetsSubscriber extends AbstractActionsSubscriber
     {
         if ($this->isGranted('create_own_timesheet')) {
             $event->addCreate($this->path('timesheet_create'));
+            // many entries at once from an Excel file
+            $event->addAction('bulk-upload', ['title' => 'Bulk upload', 'translation_domain' => false, 'url' => $this->path('timesheet_bulk_upload'), 'icon' => 'fas fa-file-upload']);
         }
 
         if ($this->isGranted('export_own_timesheet')) {

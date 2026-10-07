@@ -1,0 +1,137 @@
+{% extends 'base.html.twig' %}
+{% import "macros/widgets.html.twig" as widgets %}
+
+{#
+    One table of tasks.
+    showAssignee: true on the "Team tasks" table, where each row belongs to a different person.
+#}
+{% macro task_table(tasks, logged, editable, showAssignee, token) %}
+    {% import "macros/widgets.html.twig" as widgets %}
+    {% set statusLabels = {'open': 'Open', 'in_progress': 'In progress', 'done': 'Done'} %}
+    {% set statusColors = {'open': 'secondary', 'in_progress': 'primary', 'done': 'success'} %}
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+            <thead>
+            <tr>
+                <th>Task</th>
+                <th>{{ 'project'|trans }}</th>
+                {% if showAssignee %}<th>Assigned to</th>{% endif %}
+                <th>Due date</th>
+                <th class="text-end">Estimated</th>
+                <th class="text-end">Logged</th>
+                <th>{{ 'status'|trans }}</th>
+                <th class="w-1"></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for task in tasks %}
+                {% set spent = logged[task.id] ?? 0 %}
+                <tr{% if task.done %} class="text-secondary"{% endif %}>
+                    <td>
+                        <div class="fw-bold">{{ task.title }}</div>
+                        {% if task.description is not empty %}
+                            <div class="text-secondary small">{{ task.description|nl2br }}</div>
+                        {% endif %}
+                        {% if not showAssignee and task.createdBy is not null and task.createdBy.id != task.assignee.id %}
+                            <div class="text-secondary small">Assigned by {{ task.createdBy.displayName }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {{ task.project.name }}
+                        <div class="text-secondary small">{{ task.project.customer.name }}</div>
+                    </td>
+                    {% if showAssignee %}
+                        <td class="text-nowrap">
+                            {{ widgets.user_avatar(task.assignee, false, 'avatar-rounded avatar-xs me-1') }}
+                            {{ task.assignee.displayName }}
+                        </td>
+                    {% endif %}
+                    <td class="text-nowrap">
+                        {% if task.dueDate is not null %}
+                            {{ task.dueDate|date_short }}
+                            {% if task.overdue %}<span class="badge bg-danger text-white ms-1">Overdue</span>{% endif %}
+                        {% else %}
+                            &ndash;
+                        {% endif %}
+                    </td>
+                    <td class="text-end text-nowrap">{% if task.estimate is not null %}{{ task.estimate|duration }}{% else %}&ndash;{% endif %}</td>
+                    <td class="text-end text-nowrap{% if task.estimate is not null and spent > task.estimate %} text-danger{% endif %}">{{ spent|duration }}</td>
+                    <td><span class="badge bg-{{ statusColors[task.status] }} text-white">{{ statusLabels[task.status] }}</span></td>
+                    <td class="text-nowrap">
+                        <div class="btn-list flex-nowrap justify-content-end">
+                            {% if task.status == 'open' %}
+                                <form method="post" action="{{ path('tasks_status', {'id': task.id, 'status': 'in_progress'}) }}">
+                                    <input type="hidden" name="_token" value="{{ token }}">
+                                    <button type="submit" class="btn btn-sm">Start</button>
+                                </form>
+                            {% endif %}
+                            {% if task.status != 'done' %}
+                                <form method="post" action="{{ path('tasks_status', {'id': task.id, 'status': 'done'}) }}">
+                                    <input type="hidden" name="_token" value="{{ token }}">
+                                    <button type="submit" class="btn btn-sm btn-success">Mark done</button>
+                                </form>
+                            {% else %}
+                                <form method="post" action="{{ path('tasks_status', {'id': task.id, 'status': 'open'}) }}">
+                                    <input type="hidden" name="_token" value="{{ token }}">
+                                    <button type="submit" class="btn btn-sm">Reopen</button>
+                                </form>
+                            {% endif %}
+                            {% if editable[task.id] ?? false %}
+                                <a href="{{ path('tasks_edit', {'id': task.id}) }}" class="btn btn-sm">{{ 'edit'|trans }}</a>
+                                <form method="post" action="{{ path('tasks_delete', {'id': task.id}) }}" class="task-delete-form" data-title="{{ task.title }}">
+                                    <input type="hidden" name="_token" value="{{ token }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'delete'|trans }}</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endmacro %}
+
+{% block main %}
+    {% set token = csrf_token('task_status') %}
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">My tasks</h3>
+            {% if can_assign %}
+                <div class="card-actions">
+                    <a href="{{ path('tasks_create') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Assign a task</a>
+                </div>
+            {% endif %}
+        </div>
+        {% if my_tasks is empty %}
+            <div class="card-body text-secondary">No tasks are assigned to you.</div>
+        {% else %}
+            {{ _self.task_table(my_tasks, logged, editable, false, token) }}
+        {% endif %}
+    </div>
+
+    {% if can_assign %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Team tasks</h3>
+            </div>
+            {% if team_tasks is empty %}
+                <div class="card-body text-secondary">You have not assigned any tasks yet. Use "Assign a task" to give one to a member of your team.</div>
+            {% else %}
+                {{ _self.task_table(team_tasks, logged, editable, true, token) }}
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <script type="text/javascript">
+        // ask before deleting a task
+        document.querySelectorAll('.task-delete-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!window.confirm('Delete the task "' + form.dataset.title + '"?')) {
+                    event.preventDefault();
+                }
+            });
+        });
+    </script>
+{% endblock %}

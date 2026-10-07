@@ -19,6 +19,7 @@ use App\Entity\RateInterface;
 use App\Entity\Team;
 use App\Entity\Timesheet;
 use App\Entity\TimesheetMeta;
+use App\EventSubscriber\TimesheetStatusSubscriber;
 use App\Entity\User;
 use App\Model\Revenue;
 use App\Model\TimesheetStatistic;
@@ -700,6 +701,17 @@ class TimesheetRepository extends EntityRepository
             $qb->andWhere('t.exported = :exported')->setParameter('exported', true, Types::BOOLEAN);
         } elseif ($query->isNotExported()) {
             $qb->andWhere('t.exported = :exported')->setParameter('exported', false, Types::BOOLEAN);
+        }
+
+        // "Status" custom field: an entry that never got a status counts as "In progress"
+        if (null !== ($workStatus = $query->getWorkStatus())) {
+            $hasStatus = 'SELECT 1 FROM ' . TimesheetMeta::class . ' ws WHERE ws.timesheet = t.id AND ws.name = :ws_name AND ws.value = :ws_value';
+            if ($workStatus === TimesheetStatusSubscriber::IN_PROGRESS) {
+                $qb->andWhere($qb->expr()->not($qb->expr()->exists($hasStatus)))->setParameter('ws_value', TimesheetStatusSubscriber::COMPLETED);
+            } else {
+                $qb->andWhere($qb->expr()->exists($hasStatus))->setParameter('ws_value', $workStatus);
+            }
+            $qb->setParameter('ws_name', TimesheetStatusSubscriber::FIELD);
         }
 
         if ($query->isBillable()) {

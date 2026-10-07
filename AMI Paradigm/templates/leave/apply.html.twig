@@ -1,0 +1,295 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    {% set formOptions = {
+        'title': 'Apply for leave',
+        'form': form,
+        'back': path('leave'),
+        'submit_button': 'Apply'
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% form_theme form 'form/horizontal.html.twig' %}
+        {% block form_body %}
+            {{ form_row(form.title) }}
+            {{ form_row(form.location) }}
+            {{ form_row(form.startDate) }}
+            {{ form_row(form.endDate) }}
+            <div class="mb-3 row">
+                <div class="col-sm-2"></div>
+                <div class="col-sm-10">
+                    <div class="leave-legend text-secondary">
+                        <span><span class="swatch" style="background-color: rgba(214, 57, 57, .3)"></span>Weekend (cannot be picked)</span>
+                        <span><span class="swatch" style="background-color: rgba(47, 179, 68, .45)"></span>Holiday</span>
+                        <span><span class="swatch" style="background-color: rgba(245, 159, 0, .5)"></span>Optional holiday</span>
+                        <span id="leave-legend-scope"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="mb-3 row">
+                <div class="col-sm-2 col-form-label">Leave days</div>
+                <div class="col-sm-10">
+                    <div class="d-flex align-items-center flex-wrap" style="gap: .75rem; min-height: 2.25rem;">
+                        <strong id="leave-day-count">&ndash;</strong>
+                        {# small box: the leave balance now, and what is left once days are picked #}
+                        <span id="leave-balance-box" class="badge bg-primary-lt" style="font-size: .875rem; padding: .5rem .75rem;">
+                            Leave balance: <span id="leave-balance-value">{{ balance }}</span>
+                        </span>
+                        <span id="leave-day-note" class="text-danger"></span>
+                        <span id="leave-day-info" class="text-secondary small"></span>
+                    </div>
+                </div>
+            </div>
+            {{ form_row(form.description) }}
+            {{ form_rest(form) }}
+        {% endblock %}
+    {% endembed %}
+
+    <style>
+        /* leave form calendar: weekends light red (not selectable), holidays light green, optional holidays light amber - each festival with its name */
+        .litepicker .container__days .day-item.leave-weekend { background-color: rgba(214, 57, 57, .16); color: var(--tblr-danger, #d63939); cursor: not-allowed; }
+        .litepicker .container__days .day-item.leave-festival { position: relative; line-height: 1.1; padding-top: .2rem; }
+        .litepicker .container__days .day-item.leave-holiday { background-color: rgba(47, 179, 68, .28); }
+        .litepicker .container__days .day-item.leave-optional { background-color: rgba(245, 159, 0, .32); }
+        .leave-legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .8125rem; }
+        .leave-legend .swatch { display: inline-block; width: .9rem; height: .9rem; border-radius: 3px; vertical-align: -2px; margin-right: .35rem; }
+        .litepicker .container__days .day-item.leave-festival.is-start-date,
+        .litepicker .container__days .day-item.leave-festival.is-end-date { background-color: var(--tblr-primary); }
+        .litepicker .container__days .day-item .leave-festival-name { display: block; font-size: .55rem; line-height: 1.05; font-weight: 600; white-space: normal; overflow: hidden; max-height: 1.2rem; word-break: break-word; }
+        /* a little more room per day, so a festival name fits under the date */
+        .litepicker .container__days > div, .litepicker .container__days > a { min-height: 2.7rem; }
+    </style>
+    <script type="text/javascript">
+        (function () {
+            var optionalHolidays = {{ optional_holidays|json_encode|raw }};
+            var taken = {{ taken|json_encode|raw }};
+            var optionalUsed = {{ optional_used|json_encode|raw }};
+            var optionalLimit = {{ optional_limit|json_encode|raw }};
+            var festivals = {{ festivals|json_encode|raw }};
+            var notCounted = {{ not_counted|json_encode|raw }};
+            var balance = {{ balance|json_encode|raw }};
+            var overdraw = {{ overdraw|json_encode|raw }};
+
+            var type = document.getElementById('leave_apply_form_title');
+            var location = document.getElementById('leave_apply_form_location');
+            var from = document.getElementById('leave_apply_form_startDate');
+            var to = document.getElementById('leave_apply_form_endDate');
+            var count = document.getElementById('leave-day-count');
+            var note = document.getElementById('leave-day-note');
+            if (type === null || from === null || to === null || location === null) { return; }
+
+            var locationRow = location.closest('.row');
+            var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+            // list of optional holidays shown under the location
+            var hint = document.createElement('div');
+            hint.className = 'form-text';
+            location.parentNode.appendChild(hint);
+
+            /* Read a date typed in the picker's own format (for example M/D/YYYY or DD.MM.YYYY). */
+            function parse(input) {
+                var format = input.dataset.format || input.placeholder || '';
+                var value = (input.value || '').trim();
+                if (format === '' || value === '') { return null; }
+                var order = [];
+                var pattern = format.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&').replace(/YYYY|YY|MM|M|DD|D/g, function (token) {
+                    order.push(token.charAt(0));
+                    return token === 'YYYY' ? '(\\d{4})' : '(\\d{1,2})';
+                });
+                var match = new RegExp('^' + pattern + '$').exec(value);
+                if (match === null) { return null; }
+                var parts = {};
+                order.forEach(function (key, index) { parts[key] = parseInt(match[index + 1], 10); });
+                if (parts.Y < 100) { parts.Y += 2000; }
+                var date = new Date(parts.Y, parts.M - 1, parts.D);
+                return (date.getMonth() === parts.M - 1 && date.getDate() === parts.D) ? date : null;
+            }
+
+            function iso(date) {
+                return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + date.getDate()).slice(-2);
+            }
+
+            /* A day that is a holiday for the person (at every office, or at the chosen office for an optional holiday). */
+            function holidayName(date) {
+                var festival = festivals[iso(date)];
+                return festival && festivalKind(festival) === 'H' ? festival.name : null;
+            }
+
+            /* Days the person already has leave on (any kind): inside a longer leave these are simply not counted again. */
+            function isAlreadyOnLeave(date) {
+                var day = iso(date);
+                return taken.some(function (leave) { return leave.from <= day && leave.to >= day; });
+            }
+
+            /* Days a leave costs: Monday to Friday, without holidays and (unless told otherwise) days already on leave. */
+            function workingDays(first, last, keepTaken) {
+                var days = 0;
+                var day = new Date(first.getTime());
+                var guard = 0;
+                while (day <= last && guard++ < 800) {
+                    if (day.getDay() !== 0 && day.getDay() !== 6 && holidayName(day) === null && (keepTaken || !isAlreadyOnLeave(day))) { days++; }
+                    day.setDate(day.getDate() + 1);
+                }
+                return days;
+            }
+
+            function update() {
+                var isOptional = type.value === 'Optional holiday';
+                locationRow.style.display = isOptional ? '' : 'none';
+
+                var dates = optionalHolidays[location.value] || {};
+                var listed = Object.keys(dates).map(function (day) {
+                    var parts = day.split('-');
+                    return parts[2] + '-' + months[parseInt(parts[1], 10) - 1] + '-' + parts[0].slice(2) + ' (' + dates[day] + ')';
+                });
+                hint.textContent = !isOptional ? '' : (location.value === '' ? 'Choose your office to see its optional holidays.' : 'Optional holidays: ' + listed.join(', '))
+                    + (isOptional ? ' You can take ' + optionalLimit + ' optional holidays per year.' : '');
+
+                var box = document.getElementById('leave-balance-box');
+                var info = document.getElementById('leave-day-info');
+                var value = document.getElementById('leave-balance-value');
+                function show(days, remaining, problem) {
+                    count.textContent = days === null ? '\u2013' : days + (days === 1 ? ' day' : ' days');
+                    value.textContent = remaining;
+                    note.textContent = problem || '';
+                    info.textContent = '';
+                    box.className = 'badge ' + (problem ? 'bg-danger-lt' : 'bg-primary-lt');
+                }
+
+                var first = parse(from);
+                var last = to.value.trim() === '' ? first : parse(to);
+                // optional holidays are limited per year: say so as soon as the type is chosen
+                var optionalYear = first !== null ? first.getFullYear() : new Date().getFullYear();
+                var optionalTaken = optionalUsed[optionalYear] || 0;
+                var optionalFull = isOptional && optionalTaken >= optionalLimit
+                    ? 'You have already used your ' + optionalLimit + ' optional holidays for ' + optionalYear + '.' : '';
+
+                // nothing picked yet: the box shows the balance as it is today
+                if (first === null || last === null) { show(null, balance, optionalFull); return; }
+                if (last < first) { show(null, balance, 'The last day is before the first day.'); return; }
+
+                var days = workingDays(first, last, isOptional);
+
+                // An optional holiday is one day, so it cannot go on a date that already has leave.
+                // Any other leave may run across days already on leave: those are just not counted again.
+                var clash = taken.filter(function (leave) { return leave.from <= iso(last) && leave.to >= iso(first); });
+                if (isOptional && clash.length > 0) {
+                    show(days, balance, 'You already have leave on this date: ' + clash.map(function (leave) { return leave.label; }).join(', ') + '.');
+                    return;
+                }
+                // tell the person which days were left out, in neutral colour
+                var skipped = isOptional ? [] : clash;
+
+                if (optionalFull !== '') { show(days, balance, optionalFull); return; }
+
+                if (isOptional) {
+                    if (iso(first) !== iso(last)) { show(days, balance, 'An optional holiday is a single day.'); return; }
+                    if (location.value !== '' && !dates[iso(first)]) { show(days, balance, 'Not an optional holiday for ' + location.value + '.'); return; }
+                    show(days, balance, '');
+                    return;
+                }
+
+                if (first.getDay() === 0 || first.getDay() === 6 || last.getDay() === 0 || last.getDay() === 6) {
+                    show(days, balance, 'Leave cannot start or end on a Saturday or Sunday.'); return;
+                }
+                var edgeHoliday = holidayName(first) || holidayName(last);
+                if (edgeHoliday !== null) { show(days, balance, 'Leave cannot start or end on a holiday (' + edgeHoliday + ').'); return; }
+                if (days === 0) { show(days, balance, 'You already have leave or a holiday on all of these days.'); return; }
+                // comp off does not use up leave days
+                if (notCounted.indexOf(type.value) !== -1) { show(days, balance, ''); return; }
+
+                var after = balance - days;
+                show(days, after, after < -overdraw ? 'Below the limit of -' + overdraw + '.' : '');
+                if (after >= -overdraw && skipped.length > 0) {
+                    info.textContent = 'Not counted, already on leave: ' + skipped.map(function (leave) { return leave.label; }).join(', ') + '.';
+                }
+            }
+
+            [type, location, from, to].forEach(function (field) {
+                field.addEventListener('change', update);
+                field.addEventListener('input', update);
+                field.addEventListener('blur', update);
+            });
+            /*
+             * The pop-up calendar of the two date fields:
+             * - Saturdays and Sundays are light red and cannot be picked
+             * - festival days of the holiday calendar are light green, with the festival's name under the date
+             */
+            /*
+             * What a festival day is for the person: 'H' holiday, 'O' optional holiday, or null for a normal working day.
+             * With an office chosen it is read from that office's column. Without one, a day that is a holiday at
+             * every office counts as a holiday and every other festival day as optional.
+             */
+            function festivalKind(festival) {
+                if (type.value === 'Optional holiday' && location.value !== '') {
+                    var code = festival.codes[location.value];
+                    return code === 'H' || code === 'O' ? code : null;
+                }
+                var everywhere = Object.keys(festival.codes).every(function (office) { return festival.codes[office] === 'H'; });
+                return everywhere ? 'H' : 'O';
+            }
+
+            var decoratedPickers = [];
+            var decoratedCount = 0;
+            function decorateCalendars() {
+                if (typeof kimai === 'undefined' || typeof kimai.getPlugins !== 'function') { return; }
+                // the date-picker plugin keeps its calendars as [input, calendar] pairs
+                var pickers = [];
+                kimai.getPlugins().forEach(function (plugin) { if (Array.isArray(plugin._pickers)) { pickers = pickers.concat(plugin._pickers); } });
+
+                pickers.forEach(function (entry) {
+                    if (!Array.isArray(entry)) { return; }
+                    var input = entry[0];
+                    var picker = entry[1];
+                    if ((input !== from && input !== to) || picker._leaveDecorated) { return; }
+                    picker._leaveDecorated = true;
+                    decoratedPickers.push(picker);
+                    decoratedCount++;
+
+                    picker.on('render:day', function (cell, date) {
+                        var weekday = date.getDay();
+                        if (weekday === 0 || weekday === 6) { cell.classList.add('leave-weekend'); }
+                        var festival = festivals[date.format('YYYY-MM-DD')];
+                        var kind = festival ? festivalKind(festival) : null;
+                        if (kind !== null) {
+                            cell.classList.add('leave-festival', kind === 'H' ? 'leave-holiday' : 'leave-optional');
+                            cell.title = festival.name + (kind === 'H' ? ' (holiday)' : ' (optional holiday)');
+                            var label = document.createElement('span');
+                            label.className = 'leave-festival-name';
+                            label.textContent = festival.name;
+                            cell.appendChild(label);
+                        }
+                    });
+                    picker.setOptions({
+                        // weekends and holidays cannot be picked
+                        lockDaysFilter: function (date) {
+                            var weekday = date.getDay();
+                            if (weekday === 0 || weekday === 6) { return true; }
+                            var festival = festivals[date.format('YYYY-MM-DD')];
+                            return festival ? festivalKind(festival) === 'H' : false;
+                        }
+                    });
+                });
+            }
+            // the calendars are created a moment after the page loads, so keep trying until both are done
+            document.addEventListener('kimai.initialized', decorateCalendars);
+            var decorateTimer = window.setInterval(function () {
+                decorateCalendars();
+                if (decoratedCount >= 2) { window.clearInterval(decorateTimer); }
+            }, 300);
+
+            // colours depend on the office: redraw the calendars when it changes
+            var scope = document.getElementById('leave-legend-scope');
+            function refreshCalendars() {
+                scope.textContent = (type.value === 'Optional holiday' && location.value !== '') ? 'Shown for ' + location.value + '.' : 'Shown for all offices; choose an office under "Optional holiday" to see its own days.';
+                decoratedPickers.forEach(function (picker) { if (typeof picker.render === 'function') { picker.render(); } });
+            }
+            location.addEventListener('change', refreshCalendars);
+            type.addEventListener('change', refreshCalendars);
+            refreshCalendars();
+
+            // the date picker fills the field without always firing an event, so re-check regularly
+            window.setInterval(update, 700);
+            update();
+        })();
+    </script>
+{% endblock %}

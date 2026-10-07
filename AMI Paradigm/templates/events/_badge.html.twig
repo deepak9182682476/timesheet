@@ -1,0 +1,3 @@
+{# coloured label for an event type #}
+{% set typeColors = {'team_outing': 'primary', 'holiday': 'success', 'leave': 'warning', 'training': 'info', 'other': 'secondary'} %}
+<span class="badge bg-{{ typeColors[event.type] ?? 'secondary' }} text-white">{{ event.typeLabel }}</span>

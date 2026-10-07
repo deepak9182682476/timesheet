@@ -13,7 +13,7 @@
             <tbody>
             {% for row in projectStats|sort((a, b) => a.entity.name <=> b.entity.name) %}
                 {% set project = row.entity %}
-                <tr{% if is_granted('details', project) %} class="alternative-link open-edit" data-href="{{ path('project_details', {'id': project.id}) }}"{% endif %}>
+                <tr data-project="{{ project.id }}"{% if is_granted('details', project) %} class="alternative-link open-edit" data-href="{{ path('project_details', {'id': project.id}) }}"{% endif %}>
                     <td>
                         {{ widgets.label_project(project) }}
                         <br>

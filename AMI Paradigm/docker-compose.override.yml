@@ -1,0 +1,33 @@
+# Development override, picked up automatically by `docker compose`.
+# Mounts the source from this folder into the running app so edits show
+# without rebuilding the image.
+#   templates/                          -> visible on browser refresh
+#   src/, translations/, migrations/    -> visible after `docker compose restart app`
+# Keep the original project name so Docker reuses the existing containers and
+# database volume from before the folder was renamed to "AMI Paradigm".
+name: kimai
+
+services:
+  app:
+    volumes:
+      - ./templates:/opt/kimai/templates
+      - ./translations:/opt/kimai/translations
+      - ./src:/opt/kimai/src
+      - ./migrations:/opt/kimai/migrations
+      - ./docker/live-templates.yaml:/opt/kimai/config/packages/zz_live_templates.yaml:ro
+    # Some tools save files readable only by their owner, which the web server
+    # (a different user) cannot open; the page then renders that template empty.
+    # This makes such files readable and marks them as changed so the app
+    # reloads them: once before the app starts, then every two seconds in the
+    # background. It then hands over to the normal start script.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        fix() {
+          find /opt/kimai/templates /opt/kimai/src /opt/kimai/translations /opt/kimai/migrations -type d ! -perm -005 -exec chmod a+rx {} + 2>/dev/null
+          find /opt/kimai/templates /opt/kimai/src /opt/kimai/translations /opt/kimai/migrations -type f ! -perm -004 -exec sh -c 'chmod a+r "$$@"; touch "$$@"' sh {} + 2>/dev/null
+        }
+        fix
+        (while true; do fix; sleep 2; done) &
+        exec /opt/kimai/docker/entrypoint.sh

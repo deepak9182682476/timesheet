@@ -1,11 +1,195 @@
-{% set teams = data %}
+{% set teams = data|sort((a, b) => a.name|lower <=> b.name|lower) %}
 {% set title = options.title|default(title|default('teams')) %}
 
-{% embed '@theme/embeds/card.html.twig' with {'border': false, 'margin_bottom': 0} %}
+{# One person in the organisation chart, followed by everyone in the team who reports to them #}
+{% macro org_node(member, members, depth) %}
     {% import "macros/widgets.html.twig" as widgets %}
+    {% set user = member.user %}
+    {% set reports = members|filter(m => m.user.supervisor is not null and m.user.supervisor.id == user.id)|sort((a, b) => a.user.displayName|lower <=> b.user.displayName|lower) %}
+    <li>
+        {# highlight the person who is logged in #}
+        {% set isMe = app.user is not null and app.user.id == user.id %}
+        <div class="org-person{% if isMe %} org-me{% endif %}"{% if isMe %} role="button" tabindex="0" title="Show this team's projects"{% endif %}>
+            {{ widgets.user_avatar(user, false, 'avatar-rounded avatar-sm') }}
+            <span class="org-text">
+                <span class="org-name">{{ user.displayName }}</span>
+                {% if user.title is not empty %}<span class="org-title">{{ user.title }}</span>{% endif %}
+            </span>
+        </div>
+        {% if reports is not empty and depth < 12 %}
+            <ul>
+                {% for report in reports %}
+                    {{ _self.org_node(report, members, depth + 1) }}
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </li>
+{% endmacro %}
+
+{# Built here, outside the embed, so the recursive org_node macro above is in scope #}
+{% set teamTabs %}
+{% if teams is empty %}
+    <div class="p-3 text-secondary">{{ 'error.no_entries_found'|trans }}</div>
+{% else %}
+    {% set viewTeam = is_granted('view_team') %}
+    <ul class="nav nav-tabs org-tabs px-2 pt-2" role="tablist">
+        {% for team in teams %}
+            <li class="nav-item" role="presentation">
+                <a class="nav-link{% if loop.first %} active{% endif %}" href="#user-team-tab-{{ team.id }}" data-bs-toggle="tab" role="tab"{% if loop.first %} aria-selected="true"{% endif %}>
+                    <span class="badge me-2" style="background-color: {{ team.color|colorize(team.name) }}"></span>{{ team.name }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+    <div class="tab-content">
+        {% for team in teams %}
+            {% set members = team.members|filter(m => m.user.enabled) %}
+            {% set memberIds = members|map(m => m.user.id) %}
+            {# Top of the chart: people whose supervisor is not set, or is outside this team #}
+            {% set roots = members|filter(m => m.user.supervisor is null or m.user.supervisor.id not in memberIds)|sort((a, b) => a.user.displayName|lower <=> b.user.displayName|lower) %}
+            {# A reporting loop (A reports to B, B reports to A) leaves nobody on top: fall back to showing everyone #}
+            {% if roots is empty %}{% set roots = members %}{% endif %}
+            <div class="tab-pane{% if loop.first %} active show{% endif %}" id="user-team-tab-{{ team.id }}" role="tabpanel" data-team-name="{{ team.name }}" data-team-projects="{{ team.projects|map(p => p.id)|join(',') }}">
+                <div class="org-chart-wrapper">
+                    {% if members is empty %}
+                        <div class="text-secondary">{{ 'error.no_entries_found'|trans }}</div>
+                    {% else %}
+                        <ul class="org-chart">
+                            {% for root in roots %}
+                                {{ _self.org_node(root, members, 0) }}
+                            {% endfor %}
+                        </ul>
+                        {% if members|length > 1 and members|filter(m => m.user.supervisor is not null) is empty %}
+                            <div class="org-hint text-secondary">No reporting lines are set for this team yet. Set each person's supervisor in their user profile to build the chart.</div>
+                        {% endif %}
+                    {% endif %}
+                    {# teams are managed by the system administrator only #}
+                    {% if viewTeam and is_granted('edit', team) and app.user.superAdmin %}
+                        <a class="org-edit modal-ajax-form" href="{{ path('admin_team_member', {'id': team.id}) }}" data-href="{{ path('admin_team_member', {'id': team.id}) }}" title="{{ 'edit'|trans }}"><i class="fas fa-pen"></i></a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+{% endset %}
+
+{% embed '@theme/embeds/card.html.twig' with {'border': false, 'margin_bottom': 0} %}
     {% block box_title %}{{ title|trans }}{% endblock %}
     {% block box_body_class %}p-0 box-body-scrollable{% endblock %}
     {% block box_body %}
-        {{ widgets.team_list(teams, {title: false}) }}
+        {{ teamTabs }}
     {% endblock %}
 {% endembed %}
+{# A copy of "My projects" kept in reserve: it is used when that widget is not on this person's dashboard, so clicking a name can still open it #}
+{% if is_granted('budget_team_project') or is_granted('budget_teamlead_project') or is_granted('budget_project') or is_granted('time_team_project') or is_granted('time_teamlead_project') or is_granted('time_project') %}
+    <div id="team-projects-source" hidden>{{ render_widget('UserTeamProjects') }}</div>
+{% endif %}
+<style>
+    .org-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
+    .org-tabs .nav-link { white-space: nowrap; }
+    .org-chart-wrapper { position: relative; padding: 1.25rem 1rem 1rem; overflow-x: auto; text-align: center; }
+    .org-edit { position: absolute; top: .5rem; right: .75rem; color: var(--tblr-secondary); }
+    .org-hint { margin-top: .75rem; font-size: .8125rem; }
+    .org-chart, .org-chart ul { display: inline-flex; margin: 0; padding: 0; list-style: none; }
+    .org-chart ul { position: relative; padding-top: 1.25rem; }
+    .org-chart li { position: relative; display: flex; flex-direction: column; align-items: center; padding: 0 .5rem; }
+    .org-person { display: inline-flex; align-items: center; gap: .5rem; padding: .375rem .75rem .375rem .5rem; border: 1px solid var(--tblr-border-color); border-radius: var(--tblr-border-radius); background: var(--tblr-bg-surface); }
+    .org-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+    .org-name { font-weight: 600; white-space: nowrap; }
+    .org-person.org-me { border-color: var(--tblr-primary); background: var(--tblr-primary-lt, rgba(32, 107, 196, .1)); box-shadow: 0 0 0 1px var(--tblr-primary); }
+    .org-person.org-me .org-name { color: var(--tblr-primary); }
+    .org-person.org-me { cursor: pointer; }
+    .org-person.org-me.org-filtering { background: var(--tblr-primary); }
+    .org-person.org-me.org-filtering .org-name, .org-person.org-me.org-filtering .org-title { color: var(--tblr-primary-fg, #fff); }
+    /* hidden until a team is picked (see script below) */
+    #UserTeamProjects:not(.team-projects-open) { display: none; }
+    .team-project-filter { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .5rem 1rem; font-size: .8125rem; background: var(--tblr-primary-lt, rgba(32, 107, 196, .1)); border-bottom: 1px solid var(--tblr-border-color); }
+    .org-title { font-size: .75rem; color: var(--tblr-secondary); white-space: nowrap; }
+    /* connector lines: only below the top row */
+    .org-chart ul > li { padding-top: 1.25rem; }
+    .org-chart ul > li::before { content: ''; position: absolute; top: 0; left: 0; right: 0; border-top: 1px solid var(--tblr-border-color-dark, var(--tblr-border-color)); }
+    .org-chart ul > li:first-child::before { left: 50%; }
+    .org-chart ul > li:last-child::before { right: 50%; }
+    .org-chart ul > li:only-child::before { display: none; }
+    .org-chart ul > li::after { content: ''; position: absolute; top: 0; left: 50%; height: 1.25rem; border-left: 1px solid var(--tblr-border-color-dark, var(--tblr-border-color)); }
+    .org-chart ul::before { content: ''; position: absolute; top: 0; left: 50%; height: 1.25rem; border-left: 1px solid var(--tblr-border-color-dark, var(--tblr-border-color)); }
+</style>
+<script type="text/javascript">
+    /* "My projects" stays hidden until you click your own box in a team's chart; it then opens with that team's projects only. Clicking the box again, or "Close", hides it. */
+    (function () {
+        if (window.__teamProjectFilter) { return; }
+        window.__teamProjectFilter = true;
+
+        function projectsBox() {
+            var box = document.getElementById('UserTeamProjects');
+            if (box !== null) { return box; }
+            // "My projects" is not on this dashboard: build it from the reserve copy, next to "My teams"
+            var source = document.getElementById('team-projects-source');
+            var teams = document.getElementById('UserTeams');
+            if (source === null || teams === null) { return null; }
+            box = document.createElement('div');
+            box.id = 'UserTeamProjects';
+            box.className = 'col-md-6';
+            while (source.firstChild) { box.appendChild(source.firstChild); }
+            source.remove();
+            teams.parentNode.insertBefore(box, teams.nextSibling);
+            return box;
+        }
+
+        function clearFilter() {
+            var box = projectsBox();
+            document.querySelectorAll('.org-person.org-filtering').forEach(function (el) { el.classList.remove('org-filtering'); });
+            if (box === null) { return; }
+            box.querySelectorAll('tr[data-project]').forEach(function (row) { row.style.display = ''; });
+            box.querySelectorAll('.team-project-filter').forEach(function (el) { el.remove(); });
+            box.classList.remove('team-projects-open');
+        }
+
+        function applyFilter(person) {
+            var pane = person.closest('.tab-pane');
+            var box = projectsBox();
+            if (pane === null || box === null) { return; }
+            var ids = (pane.dataset.teamProjects || '').split(',').filter(function (id) { return id !== ''; });
+            var visible = 0;
+            clearFilter();
+            box.querySelectorAll('tr[data-project]').forEach(function (row) {
+                var show = ids.indexOf(row.dataset.project) !== -1;
+                row.style.display = show ? '' : 'none';
+                if (show) { visible++; }
+            });
+
+            var bar = document.createElement('div');
+            bar.className = 'team-project-filter';
+            var label = document.createElement('span');
+            label.textContent = visible > 0 ? ('Projects for ' + pane.dataset.teamName) : ('No projects for ' + pane.dataset.teamName);
+            var all = document.createElement('a');
+            all.href = '#';
+            all.textContent = 'Close';
+            all.addEventListener('click', function (event) { event.preventDefault(); clearFilter(); });
+            bar.appendChild(label);
+            bar.appendChild(all);
+            var table = box.querySelector('table');
+            if (table !== null) { table.parentNode.insertBefore(bar, table); }
+
+            box.classList.add('team-projects-open');
+            person.classList.add('org-filtering');
+            box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
+
+        function toggle(person) {
+            if (person.classList.contains('org-filtering')) { clearFilter(); } else { applyFilter(person); }
+        }
+
+        document.addEventListener('click', function (event) {
+            var person = event.target.closest ? event.target.closest('.org-person.org-me') : null;
+            if (person !== null) { toggle(person); }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter' && event.key !== ' ') { return; }
+            var person = event.target.closest ? event.target.closest('.org-person.org-me') : null;
+            if (person !== null) { event.preventDefault(); toggle(person); }
+        });
+    })();
+</script>

@@ -1,0 +1,55 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    {% set formOptions = {
+        'title': (task.id is null ? 'Assign a task' : 'Edit task'),
+        'form': form,
+        'back': path('tasks')
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% form_theme form 'form/horizontal.html.twig' %}
+        {% block form_body %}
+            {{ form_row(form.title) }}
+            {{ form_row(form.description) }}
+            {{ form_row(form.project) }}
+            {{ form_row(form.activity) }}
+            {{ form_row(form.assignee) }}
+            {{ form_row(form.dueDate) }}
+            {{ form_row(form.estimate) }}
+            {{ form_row(form.status) }}
+            {{ form_rest(form) }}
+        {% endblock %}
+    {% endembed %}
+    {# The Activity list follows the Project: only the activities of the picked project's phases are offered #}
+    <script type="text/javascript">
+        (function () {
+            function ready() {
+                var project = document.querySelector('select[id$="_project"]');
+                var activity = document.querySelector('select[id$="_activity"]');
+                if (project === null || activity === null) { return; }
+                var all = Array.prototype.map.call(activity.options, function (option) { return option.cloneNode(true); });
+
+                function narrow() {
+                    var picked = project.value;
+                    var before = activity.value;
+                    activity.innerHTML = '';
+                    all.forEach(function (option) {
+                        var projects = (option.dataset.projects || '').split(',');
+                        // no project picked yet: nothing but the empty choice
+                        if (option.value === '' || (picked !== '' && projects.indexOf(picked) !== -1)) {
+                            activity.appendChild(option.cloneNode(true));
+                        }
+                    });
+                    var still = Array.prototype.some.call(activity.options, function (option) { return option.value === before; });
+                    activity.value = still ? before : '';
+                    activity.dispatchEvent(new CustomEvent('data-reloaded', {detail: activity.value}));
+                }
+
+                project.addEventListener('change', narrow);
+                narrow();
+            }
+            // after the page's own scripts have dressed up the dropdowns
+            document.addEventListener('kimai.initialized', function () { window.setTimeout(ready, 100); });
+        })();
+    </script>
+{% endblock %}

@@ -55,6 +55,25 @@ final class MenuSubscriber implements EventSubscriberInterface
         $menu->addChild(new MenuItemModel('dashboard', 'dashboard.title', 'dashboard', [], 'dashboard'));
         $menu->addChild(new MenuItemModel('favorites', 'favorite_routes', null, [], 'bookmarked'));
 
+        // tasks assigned by a manager or lead; everyone sees their own, managers also see their team's
+        $tasks = new MenuItemModel('tasks', 'Tasks', 'tasks', [], 'fas fa-tasks');
+        $tasks->setChildRoutes(['tasks_create', 'tasks_edit']);
+        $menu->addChild($tasks);
+
+        // team outings, holidays, leave: everyone sees the ones that apply to them
+        $events = new MenuItemModel('team_events', 'Events', 'team_events', [], 'fas fa-calendar-day');
+        $events->setChildRoutes(['team_events_create', 'team_events_edit']);
+        $menu->addChild($events);
+
+        // apply for leave (a manager approves it) and look up the company holiday calendar
+        $leave = new MenuItemModel('apply_leave', 'Apply leave', null, [], 'fas fa-plane-departure');
+        $leaveList = new MenuItemModel('leave', 'Leave', 'leave', [], 'fas fa-calendar-plus');
+        $leaveList->setChildRoutes(['leave_apply']);
+        $leave->addChild($leaveList);
+        $leave->addChild(new MenuItemModel('holiday_calendar', 'AMIP Holiday calendar', 'holiday_calendar', [], 'fas fa-calendar-alt'));
+        $leave->setExpanded(true);
+        $menu->addChild($leave);
+
         // ------------------- timesheet menu -------------------
         $times = new MenuItemModel('times', 'time_tracking', null, [], 'timesheet');
 
@@ -74,87 +93,112 @@ final class MenuSubscriber implements EventSubscriberInterface
             );
         }
 
-        $this->addDivider($times);
-
-        if ($auth->isGranted('create_export')) {
-            $times->addChild(
-                new MenuItemModel('export', 'export', 'export', [], 'export')
-            );
-        }
-
-        if ($auth->isGranted('view_other_timesheet')) {
-            $timesheets = new MenuItemModel('timesheet_admin', 'all_times', 'admin_timesheet', [], 'timesheet-team');
-            $timesheets->setChildRoutes(['admin_timesheet_export', 'admin_timesheet_edit', 'admin_timesheet_create', 'admin_timesheet_multi_update']);
-            $times->addChild($timesheets);
-        }
-
         if ($times->hasChildren()) {
             $times->setExpanded(true); // Kimai is all about time-tracking, so we expand this menu always
             $menu->addChild($times);
         }
 
-        $contract = new MenuItemModel('contract', 'work_contract', null, [], 'contract');
-        if ($auth->isGranted('hours', $user)) {
-            $contract->addChild(new MenuItemModel('contract_status', 'work_times', 'user_contract', [], 'work_times'));
+        // ------------------- my projects menu -------------------
+        // "Team members timesheets" (formerly "All times") and "Export" live here instead of under Time Tracking
+        $projectTimes = new MenuItemModel('my_projects', 'my_team_projects', null, [], 'project');
+
+        if ($auth->isGranted('view_other_timesheet')) {
+            $timesheets = new MenuItemModel('timesheet_admin', 'all_times', 'admin_timesheet', [], 'timesheet-team');
+            $timesheets->setChildRoutes(['admin_timesheet_export', 'admin_timesheet_edit', 'admin_timesheet_create', 'admin_timesheet_multi_update']);
+            $projectTimes->addChild($timesheets);
         }
 
-        if ($contract->hasChildren()) {
-            $menu->addChild($contract);
+        if ($auth->isGranted('create_export')) {
+            $projectTimes->addChild(
+                new MenuItemModel('export', 'export', 'export', [], 'export')
+            );
         }
 
-        if ($auth->isGranted('view_reporting')) {
-            $reporting = new MenuItemModel('reporting', 'menu.reporting', 'reporting', [], 'reporting');
-            $reporting->setChildRoutes(['report_user_week', 'report_user_month', 'report_weekly_users', 'report_monthly_users', 'report_project_view']);
-            $menu->addChild($reporting);
+        if ($projectTimes->hasChildren()) {
+            $projectTimes->setExpanded(true);
+            $menu->addChild($projectTimes);
         }
 
-        // ------------------- invoice menu -------------------
-        $invoice = new MenuItemModel('invoices', 'invoices', null, [], 'invoice');
-
-        if ($auth->isGranted('create_invoice')) {
-            $invoice->addChild(new MenuItemModel('invoice', 'invoice_form.title', 'invoice', [], 'invoice'));
-        }
-
-        if ($auth->isGranted('view_invoice')) {
-            $tmpMenu = new MenuItemModel('invoice_listing', 'all_invoices', 'admin_invoice_list', [], 'list');
-            $tmpMenu->setChildRoutes(['admin_invoice_edit']);
-            $invoice->addChild($tmpMenu);
-        }
-
-        if ($auth->isGranted('manage_invoice_template')) {
-            $tmpMenu = new MenuItemModel('invoice-template', 'admin_invoice_template.title', 'admin_invoice_template', [], 'invoice-template');
-            $tmpMenu->setChildRoutes(['admin_invoice_template_edit', 'admin_invoice_template_create', 'admin_invoice_template_copy', 'admin_invoice_document_upload']);
-            $invoice->addChild($tmpMenu);
-        }
-
-        if ($invoice->hasChildren()) {
-            $this->addDivider($invoice);
-        }
-
-        $menu->addChild($invoice);
+        // Employment contract, Reporting and Invoices are hidden from the menu for all users for now.
+        // To bring them back, remove the leading // from the lines below.
+        // $contract = new MenuItemModel('contract', 'work_contract', null, [], 'contract');
+        // if ($auth->isGranted('hours', $user)) {
+        //     $contract->addChild(new MenuItemModel('contract_status', 'work_times', 'user_contract', [], 'work_times'));
+        // }
+        //
+        // if ($contract->hasChildren()) {
+        //     $menu->addChild($contract);
+        // }
+        //
+        // if ($auth->isGranted('view_reporting')) {
+        //     $reporting = new MenuItemModel('reporting', 'menu.reporting', 'reporting', [], 'reporting');
+        //     $reporting->setChildRoutes(['report_user_week', 'report_user_month', 'report_weekly_users', 'report_monthly_users', 'report_project_view']);
+        //     $menu->addChild($reporting);
+        // }
+        //
+        // // ------------------- invoice menu -------------------
+        // $invoice = new MenuItemModel('invoices', 'invoices', null, [], 'invoice');
+        //
+        // if ($auth->isGranted('create_invoice')) {
+        //     $invoice->addChild(new MenuItemModel('invoice', 'invoice_form.title', 'invoice', [], 'invoice'));
+        // }
+        //
+        // if ($auth->isGranted('view_invoice')) {
+        //     $tmpMenu = new MenuItemModel('invoice_listing', 'all_invoices', 'admin_invoice_list', [], 'list');
+        //     $tmpMenu->setChildRoutes(['admin_invoice_edit']);
+        //     $invoice->addChild($tmpMenu);
+        // }
+        //
+        // if ($auth->isGranted('manage_invoice_template')) {
+        //     $tmpMenu = new MenuItemModel('invoice-template', 'admin_invoice_template.title', 'admin_invoice_template', [], 'invoice-template');
+        //     $tmpMenu->setChildRoutes(['admin_invoice_template_edit', 'admin_invoice_template_create', 'admin_invoice_template_copy', 'admin_invoice_document_upload']);
+        //     $invoice->addChild($tmpMenu);
+        // }
+        //
+        // if ($invoice->hasChildren()) {
+        //     $this->addDivider($invoice);
+        // }
+        //
+        // $menu->addChild($invoice);
 
         // ------------------- admin menu -------------------
         $menu = $event->getAdminMenu();
 
-        if ($auth->isGranted('listing', 'customer')) {
+        // Customers and Projects are managed by administrators only (Administrator and System-Admin roles).
+        // The whole System menu is for the System-Admin alone.
+        // The pages themselves are closed to everyone else in AdminOnlyAreaSubscriber.
+        // Only the System-Admin: project managers (the Administrator role), leads and employees do not get this menu.
+        // Previous rule, which also let the Administrator role in:
+        // $isAdmin = $user->isAdmin() || $user->isSuperAdmin();
+        $isAdmin = $user->isSuperAdmin();
+
+        if ($isAdmin && $auth->isGranted('listing', 'customer')) {
             $customers = new MenuItemModel('customers', 'customers', 'admin_customer', [], 'customer');
             $customers->setChildRoutes(['admin_customer_create', 'admin_customer_permissions', 'customer_details', 'admin_customer_edit', 'admin_customer_delete']);
             $menu->addChild($customers);
         }
 
-        if ($auth->isGranted('listing', 'project')) {
+        if ($isAdmin && $auth->isGranted('listing', 'project')) {
             $projects = new MenuItemModel('projects', 'projects', 'admin_project', [], 'project');
             $projects->setChildRoutes(['admin_project_permissions', 'admin_project_create', 'project_details', 'admin_project_edit', 'admin_project_delete']);
             $menu->addChild($projects);
         }
 
-        if ($auth->isGranted('listing', 'activity')) {
+        // phases sit between project and activity on a time entry; administrators maintain them
+        if ($isAdmin) {
+            $phases = new MenuItemModel('phases', 'Phases', 'admin_phase', [], 'fas fa-layer-group');
+            $phases->setChildRoutes(['admin_phase_create', 'admin_phase_edit', 'admin_phase_task_create', 'admin_phase_task_edit']);
+            $menu->addChild($phases);
+        }
+
+        // like the rest of the Administration menu: administrators only
+        if ($isAdmin && $auth->isGranted('listing', 'activity')) {
             $activities = new MenuItemModel('activities', 'activities', 'admin_activity', [], 'activity');
             $activities->setChildRoutes(['admin_activity_create', 'activity_details', 'admin_activity_edit', 'admin_activity_delete']);
             $menu->addChild($activities);
         }
 
-        if ($auth->isGranted('view_tag')) {
+        if ($isAdmin && $auth->isGranted('view_tag')) {
             $menu->addChild(
                 new MenuItemModel('tags', 'tags', 'tags', [], 'fas fa-tags')
             );
@@ -164,6 +208,10 @@ final class MenuSubscriber implements EventSubscriberInterface
 
         // ------------------- system menu -------------------
         $menu = $event->getSystemMenu();
+
+        if (!$user->isSuperAdmin()) {
+            return;
+        }
 
         if ($auth->isGranted('view_user')) {
             $users = new MenuItemModel('users', 'users', 'admin_user', [], 'users');

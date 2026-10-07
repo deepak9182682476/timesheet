@@ -35,6 +35,8 @@ class TimesheetQuery extends ActivityQuery implements BillableInterface, DateRan
     private array $activities = [];
     private int $state = self::STATE_ALL;
     private int $exported = self::STATE_ALL;
+    /** Value of the "Status" custom field to filter by (In progress / Completed), null for all */
+    private ?string $workStatus = null;
     private ?int $maxResults = null;
     private ?\DateTimeInterface $modifiedAfter = null;
     /**
@@ -60,6 +62,7 @@ class TimesheetQuery extends ActivityQuery implements BillableInterface, DateRan
             'exported' => self::STATE_ALL,
             'state' => self::STATE_ALL,
             'billable' => null,
+            'workStatus' => null,
             'tags' => [],
             'users' => [],
             'activities' => [],
@@ -198,6 +201,16 @@ class TimesheetQuery extends ActivityQuery implements BillableInterface, DateRan
         }
 
         return $this;
+    }
+
+    public function getWorkStatus(): ?string
+    {
+        return $this->workStatus;
+    }
+
+    public function setWorkStatus(?string $workStatus): void
+    {
+        $this->workStatus = ($workStatus === '' ? null : $workStatus);
     }
 
     public function getExported(): int

@@ -1,0 +1,101 @@
+{% extends 'base.html.twig' %}
+
+{# One table of events. "today" is a Y-m-d string used to flag events that are running now. #}
+{% macro event_table(events, editable, token, today) %}
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+            <thead>
+            <tr>
+                <th>Date</th>
+                <th>Event</th>
+                <th>Type</th>
+                <th>Applies to</th>
+                <th class="w-1"></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for event in events %}
+                <tr>
+                    <td class="text-nowrap">
+                        {{ event.startDate|date_short }}{% if event.multiDay %} &ndash; {{ event.endDate|date_short }}{% endif %}
+                        <div class="text-secondary small">
+                            {{ event.startDate|date_format('l') }}{% if event.multiDay %} &ndash; {{ event.endDate|date_format('l') }}{% endif %}
+                        </div>
+                        {% if event.hasTime %}
+                            <div class="small">
+                                <i class="far fa-clock me-1"></i>{% if event.startTime is not null %}{{ event.startTime|time }}{% endif %}{% if event.endTime is not null %} &ndash; {{ event.endTime|time }}{% endif %}
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="fw-bold">
+                            {{ event.title }}
+                            {% if event.startDate|date_format('Y-m-d') <= today and event.endDate|date_format('Y-m-d') >= today %}
+                                <span class="badge bg-danger text-white ms-1">Today</span>
+                            {% endif %}
+                        </div>
+                        {% if event.description is not empty %}
+                            <div class="text-secondary small">{{ event.description|nl2br }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ include('events/_badge.html.twig', {'event': event}) }}</td>
+                    <td>{{ event.audienceLabel }}</td>
+                    <td class="text-nowrap">
+                        {% if editable[event.id] ?? false %}
+                            <div class="btn-list flex-nowrap justify-content-end">
+                                <a href="{{ path('team_events_edit', {'id': event.id}) }}" class="btn btn-sm">{{ 'edit'|trans }}</a>
+                                <form method="post" action="{{ path('team_events_delete', {'id': event.id}) }}" class="event-delete-form" data-title="{{ event.title }}">
+                                    <input type="hidden" name="_token" value="{{ token }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'delete'|trans }}</button>
+                                </form>
+                            </div>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endmacro %}
+
+{% block main %}
+    {% set token = csrf_token('team_event_delete') %}
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">Upcoming events</h3>
+            {% if can_manage %}
+                <div class="card-actions">
+                    <a href="{{ path('team_events_create') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Add an event</a>
+                </div>
+            {% endif %}
+        </div>
+        {% if upcoming is empty %}
+            <div class="card-body text-secondary">
+                No events are coming up.{% if can_manage %} Use "Add an event" to put a team outing, holiday or leave on people's dashboards.{% endif %}
+            </div>
+        {% else %}
+            {{ _self.event_table(upcoming, editable, token, today) }}
+        {% endif %}
+    </div>
+
+    {% if past is not empty %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Past events</h3>
+            </div>
+            {{ _self.event_table(past, editable, token, today) }}
+        </div>
+    {% endif %}
+
+    <script type="text/javascript">
+        // ask before deleting an event
+        document.querySelectorAll('.event-delete-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!window.confirm('Delete the event "' + form.dataset.title + '"?')) {
+                    event.preventDefault();
+                }
+            });
+        });
+    </script>
+{% endblock %}

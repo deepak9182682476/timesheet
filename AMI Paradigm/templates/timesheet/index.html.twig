@@ -147,6 +147,13 @@
     {% elseif column == 'actions' %}
         {% set event = actions(app.user, action_single, 'index', {'timesheet': entry}) %}
         {{ widgets.table_actions(event.actions) }}
+    {% elseif column == 'mf_status' %}
+        {# an entry saved before the Status field existed counts as "In progress" #}
+        {% set statusValue = entry.metaField('status') is not null and entry.metaField('status').value is not empty ? entry.metaField('status').value : 'In progress' %}
+        {# leave and bench have no work status #}
+        {% if entry.metaField('phase') is null or entry.metaField('phase').value not in ['Leave & Time Off', 'Bench'] %}
+            <span class="badge {{ statusValue == 'Completed' ? 'bg-green-lt' : 'bg-blue-lt' }}">{{ statusValue }}</span>
+        {% endif %}
     {% elseif column starts with 'mf_' %}
             {{ widgets.meta_field_value(entry, data) }}
     {% endif %}

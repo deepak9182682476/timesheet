@@ -17,9 +17,12 @@
             document.getElementById('{{ chart_id }}').getContext('2d'), {
                 type: '{{ type }}',
                 data: {
+                    {# events (team outing, leave ...) of the logged-in person are added under the day, one short line per event #}
+                    {% set dayEvents = data is empty ? {} : team_events_by_day((data|first).day, (data|last).day) %}
                     labels: [
                         {% for day in data -%}
-                        '{{ day.day|date_format('d.') }} {{ day.day|month_name(true) }}'
+                        {% set eventTitles = dayEvents[day.day|date_format('Y-m-d')] ?? [] %}
+                        ['{{ day.day|date_format('d-M-y') }}', '{{ day.day|date_format('l') }}'{% for eventTitle in eventTitles|slice(0, 3) %}, '\u2605 {{ eventTitle|u.truncate(16, '…')|e('js') }}'{% endfor %}{% if eventTitles|length > 3 %}, '+{{ eventTitles|length - 3 }} more'{% endif %}]
                         {% if not loop.last %},{% endif -%}
                         {%- endfor %}
                     ],
@@ -81,6 +84,17 @@
                             gridLines: {
                                 display: false
                             },
+                            ticks: {
+                                // show every day: without this the chart drops alternate dates as soon as one label gets wider
+                                autoSkip: false,
+                                // Saturday and Sunday are written in light red
+                                color: function (context) {
+                                    var weekend = [{% for day in data %}{{ day.day|date_format('N') >= 6 ? 'true' : 'false' }}{% if not loop.last %}, {% endif %}{% endfor %}];
+                                    return weekend[context.index] ? '#e57373' : undefined;
+                                },
+                                maxRotation: 0,
+                                minRotation: 0
+                            }
                         },
                         y: {
                             stacked: true,

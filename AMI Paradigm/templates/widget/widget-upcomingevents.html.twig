@@ -1,0 +1,41 @@
+{% set events = data %}
+{% set today = 'now'|date_format('Y-m-d') %}
+
+{% embed '@theme/embeds/card.html.twig' with {'margin_bottom': 0} %}
+    {% block box_title %}Upcoming events{% endblock %}
+    {% block box_tools %}
+        <a href="{{ path('team_events') }}" class="btn btn-sm">All events</a>
+    {% endblock %}
+    {% block box_body_class %}p-0 box-body-scrollable{% endblock %}
+    {% block box_body %}
+        {% if events is empty %}
+            <div class="p-3 text-secondary">No events are coming up.</div>
+        {% else %}
+            <table class="table table-hover dataTable" role="grid">
+                <tbody>
+                {% for event in events %}
+                    {% set runningToday = event.startDate|date_format('Y-m-d') <= today and event.endDate|date_format('Y-m-d') >= today %}
+                    <tr class="alternative-link" data-href="{{ path('team_events') }}">
+                        <td class="text-nowrap w-1">
+                            <div class="fw-bold">{{ event.startDate|date_format('d-M-y') }}</div>
+                            <small class="text-secondary">
+                                {% if event.multiDay %}to {{ event.endDate|date_format('d-M-y') }}{% else %}{{ event.startDate|date_format('l') }}{% endif %}
+                            </small>
+                        </td>
+                        <td>
+                            <div class="fw-bold">
+                                {{ event.title }}
+                                {% if runningToday %}<span class="badge bg-danger text-white ms-1">Today</span>{% endif %}
+                            </div>
+                            <small class="text-secondary">
+                                {% if event.hasTime %}{% if event.startTime is not null %}{{ event.startTime|time }}{% endif %}{% if event.endTime is not null %} &ndash; {{ event.endTime|time }}{% endif %} &middot; {% endif %}{{ event.audienceLabel }}
+                            </small>
+                        </td>
+                        <td class="w-1 text-end">{{ include('events/_badge.html.twig', {'event': event}) }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    {% endblock %}
+{% endembed %}

@@ -209,6 +209,30 @@
 {% endblock daterange_widget %}
 
 {% block duration_widget %}
+    {#
+        Durations are entered as hours in a small number box with up/down arrows (0.5, 1, 1.5 ... 10).
+        The original text field stays in the page, hidden: it is what gets submitted and what the
+        existing scripts read. The script in base.html.twig copies the hours into it as "h:mm".
+        The previous widget (text field with a dropdown of preset durations) is kept below, switched off.
+    #}
+    {% set durationText = value|default('') %}
+    {% set durationHours = '' %}
+    {% if durationText matches '/^\\d+:\\d{1,2}(:\\d{1,2})?$/' %}
+        {% set durationParts = durationText|split(':') %}
+        {% set durationHours = (durationParts[0] + durationParts[1] / 60)|round(2) %}
+    {% elseif durationText matches '/^\\d+([.,]\\d+)?$/' %}
+        {% set durationHours = durationText|replace({',': '.'}) %}
+    {% endif %}
+    {% set durationMax = attr['data-max-hours']|default(10) %}
+    {# an older entry such as 0:51 does not sit on a half-hour step: allow it as it is #}
+    {% set durationStep = (durationHours is not same as('') and (durationHours * 2) != (durationHours * 2)|round) ? 'any' : '0.5' %}
+    <div class="duration-widget">
+        <input type="number" class="form-control duration-hours" min="0.5" max="{{ durationMax }}" step="{{ durationStep }}" value="{{ durationHours }}" data-target="{{ id }}" inputmode="decimal" autocomplete="off" aria-label="{{ 'duration'|trans }}"{% if required or attr.required is defined %} required{% endif %}{% if disabled %} disabled{% endif %}>
+        {% set attr = attr|filter((v, k) => k != 'required' and k != 'pattern')|merge({'class': (attr.class|default('') ~ ' d-none')|trim, 'tabindex': '-1'}) %}
+        {% set required = false %}
+        {{ block('form_widget_simple') }}
+    </div>
+    {# previous duration widget, switched off
     <div class="duration-widget">
         <div class="input-group">
         {% if (form.vars.duration_presets is defined and form.vars.duration_presets is not empty) and (form.vars.disabled is same as (false)) %}
@@ -219,7 +243,7 @@
             {% endif %}
             {{ block('form_widget_simple') }}
             {% if form.vars.toggle is defined and form.vars.toggle %}
-                {# this feature was never actually developed #}
+                { # this feature was never actually developed # }
                 <div class="input-group-text">
                     <a href="#" id="{{ form.vars.id }}_toggle" class="text-success">{{ icon('link') }}</a>
                 </div>
@@ -250,6 +274,7 @@
         {% endif %}
         </div>
     </div>
+    #}
 {% endblock duration_widget %}
 
 {% block date_time_widget -%}

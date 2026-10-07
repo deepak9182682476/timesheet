@@ -10,7 +10,9 @@
 namespace App\Form\Toolbar;
 
 use App\Repository\Query\TimesheetQuery;
+use App\EventSubscriber\TimesheetStatusSubscriber;
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
@@ -31,7 +33,8 @@ final class TimesheetToolbarForm extends AbstractType
 
         $this->addSearchTermInputField($builder);
         $this->addDateRange($builder, ['timezone' => $options['timezone']]);
-        $this->addCustomerMultiChoice($builder, $newOptions, true);
+        // Customer filter is switched off: people filter by project directly
+        // $this->addCustomerMultiChoice($builder, $newOptions, true);
         $this->addProjectMultiChoice($builder, $newOptions, true, true);
         $this->addActivityMultiChoice($builder, [], true);
         $this->addTagInputField($builder);
@@ -39,8 +42,20 @@ final class TimesheetToolbarForm extends AbstractType
             $this->addUsersChoice($builder);
             $this->addTeamsChoice($builder);
         }
+        // filter by the "Status" custom field of the entries
+        $builder->add('workStatus', ChoiceType::class, [
+            'label' => 'Status',
+            'translation_domain' => false,
+            'required' => false,
+            'placeholder' => 'All',
+            'choices' => [
+                TimesheetStatusSubscriber::IN_PROGRESS => TimesheetStatusSubscriber::IN_PROGRESS,
+                TimesheetStatusSubscriber::COMPLETED => TimesheetStatusSubscriber::COMPLETED,
+            ],
+        ]);
         $this->addTimesheetStateChoice($builder);
-        $this->addBillableChoice($builder);
+        // Billable filter is switched off
+        // $this->addBillableChoice($builder);
         $this->addExportStateChoice($builder);
         $this->addPageSizeChoice($builder);
         $this->addHiddenPagination($builder);

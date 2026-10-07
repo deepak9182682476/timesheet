@@ -110,6 +110,8 @@ final class DashboardService
         // default widgets
         $dashboard = [
             'PaginatedWorkingTimeChart',
+            'MyTasks',
+            'UpcomingEvents',
             //'UserAmountToday',
             //'UserAmountWeek',
             //'UserAmountMonth',

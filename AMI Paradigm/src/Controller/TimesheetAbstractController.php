@@ -11,7 +11,9 @@ namespace App\Controller;
 
 use App\Configuration\SystemConfiguration;
 use App\Entity\MetaTableTypeInterface;
+use App\Entity\Phase;
 use App\Entity\Timesheet;
+use App\EventSubscriber\TimesheetStatusSubscriber;
 use App\Event\TimesheetDuplicatePostEvent;
 use App\Event\TimesheetDuplicatePreEvent;
 use App\Event\TimesheetMetaDefinitionEvent;
@@ -78,7 +80,8 @@ abstract class TimesheetAbstractController extends AbstractController
 
         $table->addColumn('date', ['class' => 'alwaysVisible text-nowrap', 'orderBy' => 'begin']);
 
-        if ($this->canSeeStartEndTime()) {
+        // Begin and End columns are switched off: entries are logged as a date plus a duration
+        if (false && $this->canSeeStartEndTime()) { // @phpstan-ignore-line
             $table->addColumn('starttime', ['class' => 'd-none d-sm-table-cell text-center text-nowrap', 'orderBy' => 'begin']);
             $table->addColumn('endtime', ['class' => 'd-none d-sm-table-cell text-center text-nowrap', 'orderBy' => 'end']);
         }
@@ -87,7 +90,8 @@ abstract class TimesheetAbstractController extends AbstractController
             $table->addColumn('break', ['class' => 'text-end text-nowrap', 'orderBy' => false]);
         }
 
-        $table->addColumn('duration', ['class' => 'text-end text-nowrap']);
+        // left-aligned (was right-aligned: 'text-end'), so the duration does not run into the project column
+        $table->addColumn('duration', ['class' => 'text-start text-nowrap']);
 
         if ($canSeeRate) {
             $table->addColumn('hourlyRate', ['class' => 'text-end d-none text-nowrap']);
@@ -95,13 +99,29 @@ abstract class TimesheetAbstractController extends AbstractController
             $table->addColumn('rate', ['class' => 'text-end text-nowrap d-none']);
         }
 
-        $table->addColumn('customer', ['class' => 'd-none d-md-table-cell']);
+        // Customer column is switched off: people pick the project directly
+        // $table->addColumn('customer', ['class' => 'd-none d-md-table-cell']);
         $table->addColumn('project', ['class' => 'd-none d-xl-table-cell']);
+        // Phase (custom field) is shown right after the project
+        foreach ($metaColumns as $metaColumn) {
+            if ($metaColumn->getName() === Phase::TIMESHEET_META_FIELD) {
+                $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none d-xl-table-cell', 'orderBy' => false, 'data' => $metaColumn]);
+            }
+        }
         $table->addColumn('activity', ['class' => 'd-none d-xl-table-cell']);
+        // Status (custom field) is shown right after the activity
+        foreach ($metaColumns as $metaColumn) {
+            if ($metaColumn->getName() === TimesheetStatusSubscriber::FIELD) {
+                $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none d-md-table-cell', 'orderBy' => false, 'data' => $metaColumn]);
+            }
+        }
         $table->addColumn('description', ['class' => 'd-none']);
         $table->addColumn('tags', ['class' => 'd-none', 'orderBy' => false]);
 
         foreach ($metaColumns as $metaColumn) {
+            if ($metaColumn->getName() === TimesheetStatusSubscriber::FIELD || $metaColumn->getName() === Phase::TIMESHEET_META_FIELD) {
+                continue;
+            }
             $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none', 'orderBy' => false, 'data' => $metaColumn]);
         }
 

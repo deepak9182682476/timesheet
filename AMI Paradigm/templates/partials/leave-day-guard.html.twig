@@ -1,0 +1,117 @@
+{#
+    New time entry on a day of approved leave: the form says so and cannot be filled in.
+    It shows which leave covers the day and keeps only the Date box, so another day can still be picked.
+    This covers every place the form opens from (My timesheets, the calendar, a direct link).
+    Saving such an entry is refused on the server as well (TimesheetApprovedLeaveValidator).
+#}
+{% set leaveDays = approved_leave_days() %}
+<script type="text/javascript">
+    (function () {
+        window.__approvedLeaveDays = {{ leaveDays|json_encode|raw }};
+        if (window.__leaveDayGuard) { return; }
+        window.__leaveDayGuard = true;
+
+        /* reads the date box using its own format, for example M/D/YYYY or DD.MM.YYYY */
+        function readDate(input) {
+            var format = input.dataset.format || 'YYYY-MM-DD';
+            var names = format.match(/[A-Za-z]+/g) || [];
+            var numbers = input.value.match(/\d+/g) || [];
+            if (names.length !== numbers.length) { return null; }
+            var parts = {};
+            names.forEach(function (name, index) { parts[name.charAt(0).toUpperCase()] = parseInt(numbers[index], 10); });
+            if (!parts.Y || !parts.M || !parts.D) { return null; }
+            if (parts.Y < 100) { parts.Y += 2000; }
+            return parts.Y + '-' + (parts.M < 10 ? '0' : '') + parts.M + '-' + (parts.D < 10 ? '0' : '') + parts.D;
+        }
+
+        function check(form) {
+            // new entries for oneself only: an existing entry can still be corrected, and a form with a
+            // "User" box is somebody entering time for another person
+            if ((form.getAttribute('action') || '').indexOf('/create') === -1 || form.querySelector('select[id$="_user"], select[id$="_users"]') !== null) { return; }
+            var input = form.querySelector('input[id$="_begin_date"]');
+            if (input === null) { return; }
+            var row = input.closest('.mb-3');
+            if (row === null || row.parentNode === null) { return; }
+
+            var day = readDate(input);
+            var leave = day !== null ? window.__approvedLeaveDays[day] : undefined;
+            var onLeave = leave !== undefined;
+
+            Array.prototype.forEach.call(row.parentNode.children, function (el) {
+                if (el === row || el.classList.contains('leave-day-notice')) { return; }
+                if (onLeave && !el.classList.contains('d-none')) { el.classList.add('d-none'); el.dataset.leaveHidden = '1'; }
+                if (!onLeave && el.dataset.leaveHidden === '1') { el.classList.remove('d-none'); delete el.dataset.leaveHidden; }
+            });
+
+            var notice = row.parentNode.querySelector('.leave-day-notice');
+            if (onLeave) {
+                if (notice === null) {
+                    notice = document.createElement('div');
+                    notice.className = 'leave-day-notice alert alert-warning d-block mb-0';
+                    row.parentNode.insertBefore(notice, row.nextSibling);
+                }
+                notice.innerHTML = '';
+                var title = document.createElement('strong');
+                title.textContent = 'You are on approved leave on this day (' + leave + ').';
+                var text = document.createElement('div');
+                text.textContent = 'The leave is already in your timesheet, so no time can be logged for it. Pick another date, or cancel the leave on the Leave page first.';
+                notice.appendChild(title);
+                notice.appendChild(text);
+            } else if (notice !== null) {
+                notice.remove();
+            }
+
+            var holder = form.closest('.modal-content') || form;
+            holder.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
+                if (onLeave) { button.disabled = true; button.dataset.leaveDisabled = '1'; }
+                else if (button.dataset.leaveDisabled === '1') { button.disabled = false; delete button.dataset.leaveDisabled; }
+            });
+        }
+
+        function scan(root) {
+            if (!root.querySelectorAll) { return; }
+            root.querySelectorAll('input[id$="_begin_date"]').forEach(function (input) {
+                var form = input.closest('form');
+                // after the form's own scripts and the project/phase script have set the form up
+                if (form !== null) { window.setTimeout(function () { check(form); }, 400); }
+            });
+        }
+
+        ['change', 'input'].forEach(function (type) {
+            document.addEventListener(type, function (event) {
+                var el = event.target;
+                if (el.matches && el.matches('input[id$="_begin_date"]') && el.form) { check(el.form); }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            scan(document);
+            new MutationObserver(function (changes) {
+                changes.forEach(function (change) {
+                    change.addedNodes.forEach(function (node) { scan(node); });
+                });
+            }).observe(document.body, {childList: true, subtree: true});
+        });
+    })();
+
+    /* The Close button and the X of a pop-up form always close it. The pop-up's "unsaved changes" check is
+       meant for leaving by accident (Escape, a click outside); pressing Close is a clear "cancel". */
+    (function () {
+        if (window.__modalCloseAlways) { return; }
+        window.__modalCloseAlways = true;
+        document.addEventListener('click', function (event) {
+            var button = event.target.closest ? event.target.closest('[data-bs-dismiss="modal"]') : null;
+            if (button === null) { return; }
+            var modal = button.closest('.modal');
+            if (modal === null) { return; }
+            var letThrough = function (hideEvent) {
+                // skip the "unsaved changes" check for this one closing
+                hideEvent.stopImmediatePropagation();
+                modal.removeEventListener('hide.bs.modal', letThrough, true);
+                document.dispatchEvent(new Event('modal-hide'));
+            };
+            modal.addEventListener('hide.bs.modal', letThrough, true);
+            window.setTimeout(function () { modal.removeEventListener('hide.bs.modal', letThrough, true); }, 500);
+        }, true);
+    })();
+</script>

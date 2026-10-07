@@ -1,0 +1,23 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    {% set formOptions = {
+        'title': (event.id is null ? 'Add an event' : 'Edit event'),
+        'form': form,
+        'back': path('team_events')
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% form_theme form 'form/horizontal.html.twig' %}
+        {% block form_body %}
+            {{ form_row(form.title) }}
+            {{ form_row(form.type) }}
+            {{ form_row(form.startDate) }}
+            {{ form_row(form.startTime) }}
+            {{ form_row(form.endDate) }}
+            {{ form_row(form.endTime) }}
+            {{ form_row(form.audience) }}
+            {{ form_row(form.description) }}
+            {{ form_rest(form) }}
+        {% endblock %}
+    {% endembed %}
+{% endblock %}

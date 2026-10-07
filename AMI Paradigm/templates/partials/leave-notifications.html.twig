@@ -1,0 +1,59 @@
+{#
+    Notification bell in the top bar.
+    Lists the leave requests waiting for the logged-in person's decision (clicking one opens the approval page)
+    and the tasks newly assigned to them (clicking one opens the Tasks page, which marks them as seen).
+#}
+{% set leaveRequests = leave_notifications() %}
+{% set newTasks = task_notifications() %}
+{% set notificationCount = leaveRequests|length + newTasks|length %}
+<div class="nav-item dropdown d-flex me-1 leave-notifications">
+    <a href="#" class="btn btn-icon px-0 position-relative" data-bs-toggle="dropdown" data-bs-auto-close="outside" role="button" aria-expanded="false"
+       title="Notifications" aria-label="Notifications{% if notificationCount > 0 %}: {{ notificationCount }} new{% endif %}">
+        <i class="fas fa-bell"></i>
+        {% if notificationCount > 0 %}
+            <span class="badge bg-red text-white leave-notification-count">{{ notificationCount }}</span>
+        {% endif %}
+    </a>
+    <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow dropdown-menu-card leave-notification-menu">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Notifications</h3>
+            </div>
+            {% if notificationCount == 0 %}
+                <div class="card-body text-secondary">No new notifications.</div>
+            {% else %}
+                <div class="list-group list-group-flush list-group-hoverable">
+                    {% for leave in leaveRequests %}
+                        <a href="{{ path('leave') }}#team-leave" class="list-group-item list-group-item-action">
+                            <div class="fw-bold">{{ leave.user.displayName }} applied for {{ leave.title|lower }}</div>
+                            <div class="text-secondary small">
+                                {{ leave.startDate|date_format('d-M-y') }}{% if leave.multiDay %} to {{ leave.endDate|date_format('d-M-y') }}{% endif %}
+                                &middot; {{ leave_days(leave) }} {{ leave_days(leave) == 1 ? 'day' : 'days' }}
+                                &middot; waiting for your approval
+                            </div>
+                        </a>
+                    {% endfor %}
+                    {% for task in newTasks %}
+                        <a href="{{ path('tasks') }}" class="list-group-item list-group-item-action">
+                            <div class="fw-bold">{% if task.createdBy is not null %}{{ task.createdBy.displayName }} assigned you a task{% else %}A task was assigned to you{% endif %}</div>
+                            <div>{{ task.title }}</div>
+                            <div class="text-secondary small">
+                                {{ task.project.name }}{% if task.dueDate is not null %} &middot; due {{ task.dueDate|date_format('d-M-y') }}{% endif %}
+                            </div>
+                        </a>
+                    {% endfor %}
+                </div>
+                <div class="card-footer text-center">
+                    {% if leaveRequests is not empty %}<a href="{{ path('leave') }}#team-leave">Open leave requests</a>{% endif %}
+                    {% if leaveRequests is not empty and newTasks is not empty %} &middot; {% endif %}
+                    {% if newTasks is not empty %}<a href="{{ path('tasks') }}">Open tasks</a>{% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+<style>
+    .leave-notifications .leave-notification-count { position: absolute; top: -.25rem; right: -.35rem; min-width: 1.1rem; padding: .15rem .3rem; font-size: .65rem; line-height: 1; border-radius: 1rem; }
+    .leave-notifications .leave-notification-menu { width: 22rem; max-width: 90vw; padding: 0; }
+    .leave-notifications .leave-notification-menu .list-group { max-height: 60vh; overflow-y: auto; }
+</style>

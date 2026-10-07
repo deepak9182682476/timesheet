@@ -1,0 +1,125 @@
+{% extends 'base.html.twig' %}
+
+{# Administration of phases: on a time entry people pick project > phase > activity > task #}
+{% block main %}
+    {% set token = csrf_token('phase_delete') %}
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">Phases</h3>
+            <div class="card-actions">
+                <a href="{{ path('admin_phase_create') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Add a phase</a>
+            </div>
+        </div>
+        <div class="card-body text-secondary">
+            On a time entry the phase is picked after the project. A project shows its own phases; a project without
+            phases of its own shows the ones under "All projects". Picking a phase then offers only the activities linked to it,
+            and picking an activity offers the tasks listed for it below.
+        </div>
+    </div>
+
+    {% for projectName, phases in groups %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">{{ projectName is same as('') ? 'All projects' : projectName }}</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th class="w-1">Order</th>
+                        <th>Phase</th>
+                        <th>Activities</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for phase in phases %}
+                        <tr>
+                            <td class="text-secondary">{{ phase.position }}</td>
+                            <td class="fw-bold">{{ phase.name }}</td>
+                            <td>
+                                {% if phase.activities is empty %}
+                                    <span class="text-danger">No activities linked yet &ndash; nothing can be picked for this phase</span>
+                                {% else %}
+                                    {% for activity in phase.activities|sort((a, b) => a.name|lower <=> b.name|lower) %}
+                                        <span class="badge bg-blue-lt me-1">{{ activity.name }}</span>
+                                    {% endfor %}
+                                {% endif %}
+                            </td>
+                            <td class="text-nowrap">
+                                <div class="btn-list flex-nowrap justify-content-end">
+                                    <a href="{{ path('admin_phase_edit', {'id': phase.id}) }}" class="btn btn-sm">{{ 'edit'|trans }}</a>
+                                    <form method="post" action="{{ path('admin_phase_delete', {'id': phase.id}) }}" class="phase-delete-form" data-title="{{ phase.name }}">
+                                        <input type="hidden" name="_token" value="{{ token }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'delete'|trans }}</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% else %}
+        <div class="card"><div class="card-body text-secondary">No phases yet. Use "Add a phase".</div></div>
+    {% endfor %}
+
+    {# standard tasks: the last step of project > phase > activity > task #}
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">Tasks by activity</h3>
+            <div class="card-actions">
+                <a href="{{ path('admin_phase_task_create') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Add a task</a>
+            </div>
+        </div>
+        {% if tasks is empty %}
+            <div class="card-body text-secondary">No tasks yet. A task added here is offered to everybody once its activity is picked on a time entry.</div>
+        {% else %}
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Activity</th>
+                        <th class="w-1">Order</th>
+                        <th>Task</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for activityName, activityTasks in tasks %}
+                        {% for task in activityTasks %}
+                            <tr>
+                                <td class="fw-bold">{% if loop.first %}{{ activityName }}{% endif %}</td>
+                                <td class="text-secondary">{{ task.position }}</td>
+                                <td>{{ task.name }}</td>
+                                <td class="text-nowrap">
+                                    <div class="btn-list flex-nowrap justify-content-end">
+                                        <a href="{{ path('admin_phase_task_edit', {'id': task.id}) }}" class="btn btn-sm">{{ 'edit'|trans }}</a>
+                                        <form method="post" action="{{ path('admin_phase_task_delete', {'id': task.id}) }}" class="phase-delete-form" data-title="{{ task.name }}" data-kind="task">
+                                            <input type="hidden" name="_token" value="{{ token }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'delete'|trans }}</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+
+    <script type="text/javascript">
+        // ask before deleting a phase or a task
+        document.querySelectorAll('.phase-delete-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!window.confirm('Delete the ' + (form.dataset.kind || 'phase') + ' "' + form.dataset.title + '"? Time entries that already use it keep the name.')) {
+                    event.preventDefault();
+                }
+            });
+        });
+    </script>
+{% endblock %}

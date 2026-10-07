@@ -26,6 +26,56 @@
 {% endblock %}
 
 {% block page_content_start %}
+    {% include 'partials/timesheet-cascade.html.twig' %}
+    {% include 'partials/dropdown-search.html.twig' %}
+    {% include 'partials/leave-day-guard.html.twig' %}
+    {# Hours box for durations (see duration_widget in form/blocks.html.twig): keeps the hidden duration field and the visible hours box in step. Registered once for the whole page, so it also covers forms opened in a pop-up. #}
+    <script type="text/javascript">
+        (function () {
+            if (window.__durationHours) { return; }
+            window.__durationHours = true;
+            function toText(hours) {
+                var minutes = Math.round(hours * 60);
+                var m = minutes % 60;
+                return Math.floor(minutes / 60) + ':' + (m < 10 ? '0' : '') + m;
+            }
+            function toHours(text) {
+                var parts = /^(\d+):(\d{1,2})/.exec(text);
+                if (parts !== null) { return Math.round((parseInt(parts[1], 10) + parseInt(parts[2], 10) / 60) * 100) / 100; }
+                var number = parseFloat(String(text).replace(',', '.'));
+                return isNaN(number) ? '' : number;
+            }
+            function push(box) {
+                var field = document.getElementById(box.dataset.target);
+                if (field === null) { return; }
+                // typing cannot go past the limit either: a larger number snaps back to it
+                var max = parseFloat(box.max);
+                if (!isNaN(max) && parseFloat(box.value) > max) { box.value = max; }
+                var hours = parseFloat(box.value);
+                field.value = (box.value === '' || isNaN(hours) || hours < 0) ? '' : toText(hours);
+                box.dataset.syncing = '1';
+                field.dispatchEvent(new Event('change', {bubbles: true}));
+                delete box.dataset.syncing;
+            }
+            document.addEventListener('input', function (event) {
+                if (event.target.classList && event.target.classList.contains('duration-hours')) { push(event.target); }
+            });
+            document.addEventListener('change', function (event) {
+                var el = event.target;
+                if (!el.classList) { return; }
+                if (el.classList.contains('duration-hours')) { push(el); return; }
+                // another script changed the hidden field: show the new value in the hours box
+                if (el.classList.contains('duration-input') && el.id) {
+                    var box = document.querySelector('.duration-hours[data-target="' + el.id + '"]');
+                    if (box !== null && !box.dataset.syncing) {
+                        var hours = toHours(el.value);
+                        if (hours !== '' && Math.round(hours * 2) !== hours * 2) { box.step = 'any'; }
+                        box.value = hours;
+                    }
+                }
+            });
+        })();
+    </script>
     {% set flashes = app.flashes %}
     {% if flashes|length > 0 %}
         {% set domain = 'flashmessages' %}
@@ -94,6 +144,7 @@
         {% if is_granted('view_own_timesheet') %}
             {% include 'partials/recent-activities.html.twig' %}
         {% endif %}
+        {% include 'partials/leave-notifications.html.twig' %}
         {% include 'partials/user-shortcuts.html.twig' %}
         {% block navbar_extensions_after %}
             {% set event = trigger(constant('App\\Event\\ThemeEvent::TOOLBAR')) %}
@@ -106,6 +157,8 @@
 {% block page_pretitle %}{% endblock %}
 
 {% block stylesheets %}
+    {# keep sidebar sub-items aligned: a long label must not squeeze its icon and shift the text left #}
+    <style>.navbar-vertical .dropdown-item .nav-link-icon { flex-shrink: 0; }</style>
     {% if tabler_bundle.isRightToLeft() %}
         {{ encore_entry_link_tags('app-rtl') }}
     {% else %}

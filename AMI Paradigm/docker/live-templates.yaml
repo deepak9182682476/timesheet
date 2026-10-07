@@ -1,0 +1,3 @@
+# Re-read templates when they change, so edits show on refresh without rebuilding the image.
+twig:
+    auto_reload: true

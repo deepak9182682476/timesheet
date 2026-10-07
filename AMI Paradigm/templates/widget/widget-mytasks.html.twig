@@ -1,0 +1,45 @@
+{% set tasks = data.tasks %}
+{% set logged = data.logged %}
+
+{% embed '@theme/embeds/card.html.twig' with {'margin_bottom': 0} %}
+    {% block box_title %}My tasks{% endblock %}
+    {% block box_tools %}
+        <a href="{{ path('tasks') }}" class="btn btn-sm">All tasks</a>
+    {% endblock %}
+    {% block box_body_class %}p-0 box-body-scrollable{% endblock %}
+    {% block box_body %}
+        {% if tasks is empty %}
+            <div class="p-3 text-secondary">No open tasks are assigned to you.</div>
+        {% else %}
+            <table class="table table-hover dataTable" role="grid">
+                <tbody>
+                {% for task in tasks %}
+                    <tr class="alternative-link" data-href="{{ path('tasks') }}">
+                        <td>
+                            <div class="fw-bold">{{ task.title }}</div>
+                            <small class="text-secondary">{{ task.project.customer.name }} &ndash; {{ task.project.name }}</small>
+                        </td>
+                        <td class="text-nowrap text-end">
+                            {% if task.dueDate is not null %}
+                                {{ task.dueDate|date_short }}
+                                {% if task.overdue %}<span class="badge bg-danger text-white ms-1">Overdue</span>{% endif %}
+                            {% endif %}
+                            <br>
+                            <small class="text-secondary">
+                                {{ (logged[task.id] ?? 0)|duration }}{% if task.estimate is not null %} of {{ task.estimate|duration }}{% endif %}
+                            </small>
+                        </td>
+                        <td class="w-1">
+                            {% if task.status == 'in_progress' %}
+                                <span class="badge bg-primary text-white">In progress</span>
+                            {% else %}
+                                <span class="badge bg-secondary text-white">Open</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    {% endblock %}
+{% endembed %}

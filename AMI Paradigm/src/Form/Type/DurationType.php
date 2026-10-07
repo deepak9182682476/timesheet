@@ -9,6 +9,10 @@
 
 namespace App\Form\Type;
 
+use App\Utils\Duration;
+use Symfony\Component\Validator\Constraint;
+use Symfony\Component\Validator\Constraints\Callback;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 use App\Form\DataTransformer\DurationStringToSecondsTransformer;
 use App\Validator\Constraints\Duration as DurationConstraint;
 use Symfony\Component\Form\AbstractType;
@@ -31,6 +35,30 @@ final class DurationType extends AbstractType
      * Plain integers below 10 are interpreted as hours, all others as minutes.
      */
     public const PARSE_MODE_INTEGER_MINUTES = 'integer_minutes';
+
+    /** A time entry cannot be longer than this many hours (the hours box in the form uses the same limit) */
+    public const MAX_ENTRY_HOURS = 10;
+
+    /**
+     * Server-side check for the limit above: the hours box in the browser stops at the limit too,
+     * but a typed or tampered value has to be refused here as well.
+     */
+    public static function maxEntryHours(): Constraint
+    {
+        return new Callback(static function (mixed $value, ExecutionContextInterface $context): void {
+            if ($value === null || $value === '') {
+                return;
+            }
+            try {
+                $seconds = is_numeric($value) ? (int) $value : (new Duration())->parseDurationString((string) $value);
+            } catch (\Exception) {
+                return; // not a duration at all: reported by the duration check itself
+            }
+            if ($seconds > self::MAX_ENTRY_HOURS * 3600) {
+                $context->buildViolation('The duration cannot be more than ' . self::MAX_ENTRY_HOURS . ' hours.')->addViolation();
+            }
+        });
+    }
 
     public function configureOptions(OptionsResolver $resolver): void
     {

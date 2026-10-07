@@ -9,6 +9,7 @@
 
 namespace App\Form\Type;
 
+use App\Validator\Constraints\Duration as DurationConstraint;
 use App\Entity\Timesheet;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Form\AbstractType;
@@ -34,6 +35,8 @@ final class QuickEntryTimesheetType extends AbstractType
             ],
             'icon' => null,
             'parse_mode' => DurationType::PARSE_MODE_INTEGER_MINUTES,
+            // no entry longer than DurationType::MAX_ENTRY_HOURS, also when the number is typed in
+            'constraints' => [new DurationConstraint(), DurationType::maxEntryHours()],
         ];
 
         $duration = $options['duration_minutes'];

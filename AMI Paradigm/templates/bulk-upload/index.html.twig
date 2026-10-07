@@ -1,0 +1,97 @@
+{% extends 'base.html.twig' %}
+
+{# Bulk upload of time entries from an Excel file: download the template, fill it, upload it #}
+{% block main %}
+    {% if result is not null %}
+        {% if result.saved > 0 %}
+            <div class="alert alert-success" role="alert">
+                <h4 class="alert-title">{{ result.saved }} {{ result.saved == 1 ? 'entry' : 'entries' }} uploaded{% if file_name %} from {{ file_name }}{% endif %}</h4>
+                <div class="text-secondary">
+                    {% for name, count in result.people %}{{ name }}: {{ count }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
+                    {% if result.skipped > 0 %}<div>{{ result.skipped }} sample {{ result.skipped == 1 ? 'row was' : 'rows were' }} skipped.</div>{% endif %}
+                </div>
+                <div class="mt-2"><a href="{{ path('timesheet') }}" class="btn btn-sm">Open My timesheets</a></div>
+            </div>
+        {% endif %}
+        {% if result.errors is not empty %}
+            <div class="card mb-3 border-danger">
+                <div class="card-header">
+                    <h3 class="card-title text-danger">
+                        {% if result.saved > 0 %}
+                            {{ result.errors|length }} {{ result.errors|length == 1 ? 'row was' : 'rows were' }} rejected and not saved
+                        {% else %}
+                            Nothing was uploaded{% if file_name %} from {{ file_name }}{% endif %}: {{ result.errors|length }} {{ result.errors|length == 1 ? 'row was' : 'rows were' }} rejected
+                        {% endif %}
+                    </h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-vcenter card-table">
+                        <thead>
+                        <tr>
+                            <th class="w-1 text-nowrap">Excel row</th>
+                            <th>Problem</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for line, problems in result.errors %}
+                            <tr>
+                                <td class="fw-bold">{{ line }}</td>
+                                <td>{% for problem in problems %}<div>{{ problem }}</div>{% endfor %}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if result.saved > 0 %}
+                    <div class="card-footer text-secondary">The other rows of the file are saved. To add the rejected rows, correct them and upload a file with only those rows, otherwise the saved ones are doubled.</div>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endif %}
+
+    <div class="row row-cards">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h3 class="card-title">1. Download the template</h3></div>
+                <div class="card-body">
+                    <p>The Excel template has the column names, two example rows, and a sheet with the projects, phases, activities and tasks you can use.</p>
+                    <p class="text-secondary small mb-3">Columns: {{ headers|join(', ') }}</p>
+                    <a href="{{ path('timesheet_bulk_upload_template') }}" class="btn btn-outline-primary"><i class="fas fa-download me-2"></i>Download template</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h3 class="card-title">2. Upload the filled file</h3></div>
+                <div class="card-body">
+                    <form method="post" action="{{ path('timesheet_bulk_upload') }}" enctype="multipart/form-data">
+                        <input type="hidden" name="_token" value="{{ csrf_token('timesheet_bulk_upload') }}">
+                        <div class="mb-3">
+                            <input type="file" name="file" class="form-control" accept=".xlsx" required>
+                            <div class="form-hint">Excel file (.xlsx), up to {{ max_rows }} rows.</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-upload me-2"></i>Bulk upload</button>
+                        <a href="{{ path('timesheet') }}" class="btn btn-link">Back</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <ul class="mb-0">
+                <li>One row is one time entry. Leave <strong>Employee</strong> empty for your own entries.</li>
+                {% if people is not empty %}
+                    <li>You can also upload entries for the people who report to you: put their username in <strong>Employee</strong> and the entry goes into their timesheet.
+                        <span class="text-secondary">({{ people|map(p => p.displayName ~ ' – ' ~ p.userIdentifier)|slice(0, 12)|join(', ') }}{% if people|length > 12 %}, &hellip;{% endif %})</span>
+                    </li>
+                {% else %}
+                    <li>Entries for other people can only be uploaded by their superiors.</li>
+                {% endif %}
+                <li>Correct rows are saved. Rows with a problem, such as a row for somebody you are not a superior of, are rejected and listed here with their Excel row number.</li>
+                <li>The two example rows of the template are skipped as long as their description is unchanged.</li>
+            </ul>
+        </div>
+    </div>
+{% endblock %}

@@ -9,6 +9,7 @@
 
 namespace App\Form;
 
+use App\Validator\Constraints\Duration as DurationConstraint;
 use App\Configuration\SystemConfiguration;
 use App\Entity\Customer;
 use App\Entity\Timesheet;
@@ -330,6 +331,9 @@ class TimesheetEditForm extends AbstractType
                 'preset_hours' => $duration,
             ]);
         }
+
+        // no entry longer than DurationType::MAX_ENTRY_HOURS, also when the number is typed in
+        $durationOptions['constraints'] = [new DurationConstraint(), DurationType::maxEntryHours()];
 
         $builder->add('duration', DurationType::class, $durationOptions);
 

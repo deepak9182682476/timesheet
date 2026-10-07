@@ -1,0 +1,206 @@
+{#
+    Time entry form: project > phase > activity > task.
+    - picking a project narrows the phases to that project's phases (or to the "All projects" phases when it has none of its own)
+    - picking a phase narrows the activities to the ones linked to that phase
+    - picking an activity narrows the tasks to that activity's standard tasks, plus the person's assigned tasks for the project and activity
+    The options carry what is needed as data attributes (see TimesheetPhaseSubscriber and TaskTimesheetSubscriber).
+    Registered once for the whole page, so it also covers the form when it opens in a pop-up.
+#}
+<script type="text/javascript">
+    (function () {
+        if (window.__timesheetCascade) { return; }
+        window.__timesheetCascade = true;
+
+        function fields(form) {
+            return {
+                project: form.querySelector('select[id$="_project"]'),
+                activity: form.querySelector('select[id$="_activity"]'),
+                phase: form.querySelector('select[data-name="phase"]'),
+                task: form.querySelector('select[data-name="task"]')
+            };
+        }
+
+        /* remember every option a list had, so a narrowed list can be widened again */
+        function remember(select) {
+            select._allNodes = Array.prototype.map.call(select.children, function (node) { return node.cloneNode(true); });
+        }
+
+        /* show only the options that pass "keep"; the empty option always stays */
+        function narrow(select, keep) {
+            if (select === null) { return; }
+            if (select._allNodes === undefined) { remember(select); }
+            var before = select.value;
+            var nodes = select._allNodes.map(function (node) { return node.cloneNode(true); });
+            select.innerHTML = '';
+            nodes.forEach(function (node) {
+                if (node.tagName === 'OPTGROUP') {
+                    Array.prototype.slice.call(node.children).forEach(function (option) {
+                        if (option.value !== '' && !keep(option)) { node.removeChild(option); }
+                    });
+                    if (node.children.length > 0) { select.appendChild(node); }
+                } else if (node.value === '' || keep(node)) {
+                    select.appendChild(node);
+                }
+            });
+            var real = Array.prototype.filter.call(select.options, function (option) { return option.value !== ''; });
+            var stillThere = real.some(function (option) { return option.value === before; });
+            // keep the choice when it is still offered; with exactly one option left, pick it
+            select.value = stillThere ? before : (real.length === 1 && select.dataset.name !== 'task' ? real[0].value : '');
+            select._cascading = true;
+            select.dispatchEvent(new CustomEvent('data-reloaded', {detail: select.value}));
+            select._cascading = false;
+            return {changed: select.value !== before, count: real.length};
+        }
+
+        function narrowPhases(f) {
+            if (f.phase === null) { return; }
+            if (f.phase._allNodes === undefined) { remember(f.phase); }
+            var project = f.project !== null ? f.project.value : '';
+            var own = f.phase._allNodes.some(function (option) { return option.dataset && option.dataset.project === project && project !== ''; });
+            var result = narrow(f.phase, function (option) {
+                if (option.dataset.project === '*') { return true; }
+                if (project === '') { return false; }
+                return own ? option.dataset.project === project : option.dataset.project === '';
+            });
+            f.phase.dataset.offered = result.count;
+            hint(f.phase, '');
+        }
+
+        function narrowActivities(f) {
+            if (f.activity === null || f.phase === null) { return false; }
+            var picked = f.phase.selectedOptions.length > 0 ? f.phase.selectedOptions[0] : null;
+            var ids = (picked !== null && picked.dataset.activities ? picked.dataset.activities : '').split(',').filter(function (id) { return id !== ''; });
+            // no phase picked yet: every activity; a phase picked: only the activities linked to it
+            var open = picked === null || picked.value === '' || picked.dataset.project === '*';
+            return narrow(f.activity, function (option) { return open || ids.indexOf(option.value) !== -1; }).changed;
+        }
+
+        function narrowTasks(f) {
+            if (f.task === null) { return; }
+            var project = f.project !== null ? f.project.value : '';
+            var activity = f.activity !== null ? f.activity.value : '';
+            narrow(f.task, function (option) {
+                var forProject = project === '' || !option.dataset.project || option.dataset.project === project;
+                // a standard task belongs to exactly one activity
+                if (option.dataset.standard === '1') { return activity !== '' && option.dataset.activity === activity; }
+                var forActivity = activity === '' || !option.dataset.activity || option.dataset.activity === activity;
+                return forProject && forActivity;
+            });
+        }
+
+        /* leave and bench have no work status: the Status box is hidden while one of these phases is picked */
+        var NO_STATUS_PHASES = ['Leave & Time Off', 'Bench'];
+        function toggleStatus(form, f) {
+            var row = form.querySelector('[class*="_row_status"]');
+            if (row === null) { return; }
+            var isLeave = f.phase !== null && NO_STATUS_PHASES.indexOf(f.phase.value) !== -1;
+            row.classList.toggle('d-none', isLeave);
+        }
+
+        function hint(select, text) {
+            var row = select.closest('.mb-3') || select.parentNode;
+            var el = row.querySelector('.cascade-hint');
+            if (text === '') { if (el !== null) { el.remove(); } return; }
+            if (el === null) {
+                el = document.createElement('div');
+                el.className = 'cascade-hint text-danger small mt-1';
+                (select.closest('.col-sm-10') || row).appendChild(el);
+            }
+            el.textContent = text;
+        }
+
+        function setup(form) {
+            if (form._cascadeReady) { return; }
+            var f = fields(form);
+            if (f.phase === null && f.task === null) { return; }
+            form._cascadeReady = true;
+            // Setting the lists up is not the person changing the form: keep those "change" signals away from
+            // the pop-up, which would otherwise think there are unsaved changes and refuse to close.
+            quiet = true;
+            try {
+                narrowPhases(f);
+                narrowActivities(f);
+                narrowTasks(f);
+                toggleStatus(form, f);
+            } finally {
+                quiet = false;
+            }
+        }
+
+        var quiet = false;
+        document.addEventListener('change', function (event) {
+            if (quiet) { event.stopPropagation(); }
+        }, true);
+
+        function scan(root) {
+            if (!root.querySelectorAll) { return; }
+            root.querySelectorAll('select[data-name="phase"], select[data-name="task"]').forEach(function (select) {
+                var form = select.closest('form');
+                // give the form's own scripts a moment to dress up the dropdowns first
+                if (form !== null && !form._cascadeReady) { window.setTimeout(function () { setup(form); }, 250); }
+            });
+        }
+
+        document.addEventListener('change', function (event) {
+            var el = event.target;
+            if (!el.matches || !el.matches('select') || el._cascading) { return; }
+            var form = el.closest('form');
+            if (form === null) { return; }
+            var f = fields(form);
+            if (f.phase === null && f.task === null) { return; }
+            if (el === f.project) {
+                narrowPhases(f);
+                narrowTasks(f);
+                toggleStatus(form, f);
+            } else if (el === f.phase) {
+                toggleStatus(form, f);
+                hint(f.phase, '');
+                narrowActivities(f);
+                narrowTasks(f);
+            } else if (el === f.activity) {
+                narrowTasks(f);
+            }
+        });
+
+        /* the app reloads the activity list whenever the project changes: remember the new full list and narrow it to the phase.
+           Runs in the capture phase, so the dropdown is redrawn from the narrowed list. */
+        document.addEventListener('data-reloaded', function (event) {
+            var el = event.target;
+            if (!el.matches || !el.matches('select[id$="_activity"]') || el._cascading) { return; }
+            var form = el.closest('form');
+            if (form === null) { return; }
+            var f = fields(form);
+            if (f.phase === null) { return; }
+            remember(el);
+            var picked = f.phase.selectedOptions.length > 0 ? f.phase.selectedOptions[0] : null;
+            var ids = (picked !== null && picked.dataset.activities ? picked.dataset.activities : '').split(',').filter(function (id) { return id !== ''; });
+            if (picked === null || picked.value === '' || picked.dataset.project === '*') { return; }
+            Array.prototype.slice.call(el.options).forEach(function (option) {
+                if (option.value !== '' && ids.indexOf(option.value) === -1) { option.remove(); }
+            });
+            Array.prototype.slice.call(el.querySelectorAll('optgroup')).forEach(function (group) {
+                if (group.children.length === 0) { group.remove(); }
+            });
+        }, true);
+
+        /* a phase has to be picked whenever the project offers any */
+        document.addEventListener('submit', function (event) {
+            var form = event.target;
+            if (!form.querySelector) { return; }
+            var phase = form.querySelector('select[data-name="phase"]');
+            if (phase === null || phase.value !== '' || !(parseInt(phase.dataset.offered || '0', 10) > 0)) { return; }
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            hint(phase, 'Please pick a phase.');
+        }, true);
+
+        document.addEventListener('DOMContentLoaded', function () {
+            scan(document);
+            new MutationObserver(function (changes) {
+                changes.forEach(function (change) {
+                    change.addedNodes.forEach(function (node) { scan(node); });
+                });
+            }).observe(document.body, {childList: true, subtree: true});
+        });
+    })();
+</script>

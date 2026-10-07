@@ -31,24 +31,25 @@
     {% endblock %}
     {% block box_footer %}
         <div class="row">
-            <div class="col-sm-3 col-xs-6 mt-1 mb-2 mb-md-0">
+            <div class="col-sm-4 col-xs-6 mt-1 mb-2 mb-md-0">
                 <div class="text-center">
                     <h5 class="mb-1">{{ data.day|duration }}</h5>
-                    <span>{{ 'stats.workingTimeToday'|trans({'%day%': 'now'|date_short}) }}</span>
+                    <span>Today, {{ 'now'|date_format('d-M-y') }}</span>
                 </div>
             </div>
-            <div class="col-sm-3 col-xs-6 mt-1 mb-2 mb-md-0">
+            <div class="col-sm-4 col-xs-6 mt-1 mb-2 mb-md-0">
                 <div class="text-center">
                     <h5 class="mb-1">{{ data.week|duration }}</h5>
-                    <span>{{ 'stats.workingTimeWeek'|trans({'%week%': data.begin|date_format('W')}) }}</span>
+                    <span>This week</span>
                 </div>
             </div>
-            <div class="col-sm-3 col-xs-6 mt-1 mb-2 mb-md-0">
+            <div class="col-sm-4 col-xs-6 mt-1 mb-2 mb-md-0">
                 <div class="text-center">
                     <h5 class="mb-1">{{ data.month|duration }}</h5>
                     <span>{{ 'stats.workingTimeMonth'|trans({'%month%': data.thisMonth|month_name, '%year%': data.thisMonth|date_format('Y')}) }}</span>
                 </div>
             </div>
+            {# Full year total is hidden on the dashboard
             {% if data.financial is not null %}
             <div class="col-sm-3 col-xs-6 mt-1 mb-2 mb-md-0">
                 <div class="text-center">
@@ -64,6 +65,7 @@
                 </div>
             </div>
             {% endif %}
+            #}
         </div>
     {% endblock %}
 {% endembed %}
