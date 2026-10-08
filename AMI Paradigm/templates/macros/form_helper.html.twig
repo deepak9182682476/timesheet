@@ -1,6 +1,7 @@
 {% macro metafields(form, section) %}
     {% for meta in form.metaFields|sort((a, b) => a.vars.data.order <=> b.vars.data.order) %}
-        {% if meta.vars.data.section is same as (section) %}
+        {# a field the page already placed itself (like Status or Execution center of a project) is not shown twice #}
+        {% if meta.vars.data.section is same as (section) and not meta.value.rendered %}
             {{ form_row(meta.value, {'row_attr': {'class': 'mb-3 ' ~  form.vars.name ~ '_row_' ~ form.metaFields.vars.name ~ '_' ~ meta.vars.name}}) }}
         {% endif %}
     {% endfor %}

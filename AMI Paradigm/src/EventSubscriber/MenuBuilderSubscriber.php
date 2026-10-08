@@ -36,8 +36,10 @@ final class MenuBuilderSubscriber implements EventSubscriberInterface
     {
         $menuEvent = $this->menuService->getKimaiMenu();
 
-        // "Apply leave" is shown as the very last entry of the sidebar, below Administration and System
+        // "Apply leave" is shown at the very end of the sidebar, below Administration and System,
+        // and "Events" comes right after it as the last entry
         $last = null;
+        $events = null;
 
         foreach ($menuEvent->getMenu()->getChildren() as $child) {
             if ($child->getRoute() === null && !$child->hasChildren()) {
@@ -45,6 +47,10 @@ final class MenuBuilderSubscriber implements EventSubscriberInterface
             }
             if ($child->getIdentifier() === 'apply_leave') {
                 $last = $child;
+                continue;
+            }
+            if ($child->getIdentifier() === 'team_events') {
+                $events = $child;
                 continue;
             }
             $event->addItem($child);
@@ -61,6 +67,9 @@ final class MenuBuilderSubscriber implements EventSubscriberInterface
         }
         if ($last !== null) {
             $event->addItem($last);
+        }
+        if ($events !== null) {
+            $event->addItem($events);
         }
 
         $route = $event->getRequest()->attributes->get('_route');

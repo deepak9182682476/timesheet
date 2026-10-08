@@ -30,43 +30,47 @@
                     {{ form_row(form.currency) }}
                 </div>
             </div>
+            {# Homepage and Fax are hidden for now (see CustomerEditForm.php): two fields to a row #}
             <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     {{ form_row(form.contact) }}
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     {{ form_row(form.email) }}
-                </div>
-                <div class="col-md-4">
-                    {{ form_row(form.homepage) }}
                 </div>
             </div>
             <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     {{ form_row(form.mobile) }}
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     {{ form_row(form.phone) }}
                 </div>
-                <div class="col-md-4">
-                    {{ form_row(form.fax) }}
-                </div>
             </div>
-            {% if form.budgetType is defined %}
+            {% if form.homepage is defined or form.fax is defined %}
+            <div class="row">
+                {% if form.homepage is defined %}<div class="col-md-6">{{ form_row(form.homepage) }}</div>{% endif %}
+                {% if form.fax is defined %}<div class="col-md-6">{{ form_row(form.fax) }}</div>{% endif %}
+            </div>
+            {% endif %}
+            {# the money Budget is hidden for now (see CustomerController.php): hourly quota and Budget-Type are left #}
+            {% if form.budgetType is defined or form.budget is defined or form.timeBudget is defined %}
                 <div class="row">
                     {% if form.budget is defined %}
-                        <div class="col-md-4">
+                        <div class="col">
                             {{ form_row(form.budget) }}
                         </div>
                     {% endif %}
                     {% if form.timeBudget is defined %}
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             {{ form_row(form.timeBudget) }}
                         </div>
                     {% endif %}
-                    <div class="col-md-4">
+                    {% if form.budgetType is defined %}
+                    <div class="col-md-6">
                         {{ form_row(form.budgetType) }}
                     </div>
+                    {% endif %}
                 </div>
             {% endif %}
             {% if form.teams is defined %}
@@ -128,6 +132,7 @@
                     {{ form_helper.metafields(form, 'address') }}
                 {% endblock %}
             {% endembed %}
+            {# Invoice settings are hidden for now (see CustomerEditForm.php):
             {% embed '@theme/embeds/collapsible.html.twig' with {id: 'customer_invoice_settings'} %}
                 {% import "macros/widgets.html.twig" as widgets %}
                 {% import "macros/form_helper.html.twig" as form_helper %}
@@ -151,12 +156,13 @@
                     {{ form_helper.metafields(form, 'invoice') }}
                 {% endblock %}
             {% endembed %}
+            #}
             <div class="row">
                 <div class="col-md-6">
                     {{ form_row(form.visible) }}
                 </div>
                 <div class="col-md-6">
-                    {{ form_row(form.billable) }}
+                    {# Billable is hidden for now (the field is switched off in the form class) #}{% if form.billable is defined %}{{ form_row(form.billable) }}{% endif %}
                 </div>
             </div>
             {{ form_rest(form) }}

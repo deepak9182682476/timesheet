@@ -103,15 +103,17 @@ final class CustomerController extends AbstractController
             $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none', 'orderBy' => false, 'data' => $metaColumn]);
         }
 
-        if ($this->isGranted('budget_money', 'customer')) {
-            $table->addColumn('budget', ['class' => 'd-none text-end w-min', 'title' => 'budget']);
-        }
+        // the money "Budget" is hidden for now: remove the comment marks to bring the column back
+        // if ($this->isGranted('budget_money', 'customer')) {
+        //     $table->addColumn('budget', ['class' => 'd-none text-end w-min', 'title' => 'budget']);
+        // }
 
         if ($this->isGranted('budget_time', 'customer')) {
             $table->addColumn('timeBudget', ['class' => 'd-none text-end w-min', 'title' => 'timeBudget']);
         }
 
-        $table->addColumn('billable', ['class' => 'd-none text-center w-min', 'orderBy' => false]);
+        // Billable is hidden for now: remove the comment marks to bring it back
+        // $table->addColumn('billable', ['class' => 'd-none text-center w-min', 'orderBy' => false]);
         $table->addColumn('team', ['class' => 'text-center w-min', 'orderBy' => false]);
         $table->addColumn('visible', ['class' => 'd-none text-center w-min']);
         $table->addColumn('actions', ['class' => 'actions']);
@@ -462,7 +464,9 @@ final class CustomerController extends AbstractController
         $editForm = $this->createForm(CustomerEditForm::class, $customer, [
             'action' => $url,
             'method' => 'POST',
-            'include_budget' => $this->isGranted('budget', $customer),
+            // The money "Budget" is hidden for customers for now: put back the line below to bring it back
+            // 'include_budget' => $this->isGranted('budget', $customer),
+            'include_budget' => false,
             'include_time' => $this->isGranted('time', $customer),
         ]);
 

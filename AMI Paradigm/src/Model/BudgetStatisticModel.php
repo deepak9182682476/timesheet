@@ -91,23 +91,30 @@ class BudgetStatisticModel implements BudgetStatisticModelInterface
         return $this->statisticTotal->getDurationBillable();
     }
 
+    /*
+     * Billable is hidden for now, so the hourly quota counts every hour booked, not only the billable ones.
+     * To go back to billable hours, use getDurationBillable() / getDurationBillableRelative() in the three methods below.
+     */
     public function getTimeBudgetOpen(): int
     {
-        $value = $this->getTimeBudget() - $this->getDurationBillable();
+        // $value = $this->getTimeBudget() - $this->getDurationBillable();
+        $value = $this->getTimeBudget() - $this->getDuration();
 
         return max($value, 0);
     }
 
     public function getTimeBudgetOpenRelative(): int
     {
-        $value = $this->getTimeBudget() - $this->getDurationBillableRelative();
+        // $value = $this->getTimeBudget() - $this->getDurationBillableRelative();
+        $value = $this->getTimeBudget() - ($this->statistic !== null ? $this->statistic->getDuration() : 0);
 
         return max($value, 0);
     }
 
     public function getTimeBudgetSpent(): int
     {
-        return $this->getDurationBillable();
+        // return $this->getDurationBillable();
+        return $this->getDuration();
     }
 
     public function hasBudget(): bool

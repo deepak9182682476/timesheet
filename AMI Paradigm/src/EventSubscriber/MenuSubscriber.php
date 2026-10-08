@@ -20,7 +20,8 @@ final class MenuSubscriber implements EventSubscriberInterface
 {
     public function __construct(
         private readonly Security $security,
-        private readonly ContextHelper $helper
+        private readonly ContextHelper $helper,
+        private readonly \App\WorkModel\WorkModelService $workModels
     )
     {
     }
@@ -55,42 +56,45 @@ final class MenuSubscriber implements EventSubscriberInterface
         $menu->addChild(new MenuItemModel('dashboard', 'dashboard.title', 'dashboard', [], 'dashboard'));
         $menu->addChild(new MenuItemModel('favorites', 'favorite_routes', null, [], 'bookmarked'));
 
-        // tasks assigned by a manager or lead; everyone sees their own, managers also see their team's
-        $tasks = new MenuItemModel('tasks', 'Tasks', 'tasks', [], 'fas fa-tasks');
-        $tasks->setChildRoutes(['tasks_create', 'tasks_edit']);
-        $menu->addChild($tasks);
+        // Tasks is hidden for now: remove the comment marks on the three lines below to bring the menu entry back
+        // $tasks = new MenuItemModel('tasks', 'Tasks', 'tasks', [], 'fas fa-tasks');
+        // $tasks->setChildRoutes(['tasks_create', 'tasks_edit']);
+        // $menu->addChild($tasks);
 
         // team outings, holidays, leave: everyone sees the ones that apply to them
-        $events = new MenuItemModel('team_events', 'Events', 'team_events', [], 'fas fa-calendar-day');
+        // shown as "Notifications" (was "Events")
+        $events = new MenuItemModel('team_events', 'Notifications', 'team_events', [], 'fas fa-calendar-day');
         $events->setChildRoutes(['team_events_create', 'team_events_edit']);
         $menu->addChild($events);
 
         // apply for leave (a manager approves it) and look up the company holiday calendar
-        $leave = new MenuItemModel('apply_leave', 'Apply leave', null, [], 'fas fa-plane-departure');
+        $leave = new MenuItemModel('apply_leave', 'Apply Leave', null, [], 'fas fa-plane-departure');
         $leaveList = new MenuItemModel('leave', 'Leave', 'leave', [], 'fas fa-calendar-plus');
         $leaveList->setChildRoutes(['leave_apply']);
         $leave->addChild($leaveList);
-        $leave->addChild(new MenuItemModel('holiday_calendar', 'AMIP Holiday calendar', 'holiday_calendar', [], 'fas fa-calendar-alt'));
+        $leave->addChild(new MenuItemModel('holiday_calendar', 'Holiday Calendar', 'holiday_calendar', [], 'fas fa-calendar-alt'));
         $leave->setExpanded(true);
         $menu->addChild($leave);
 
         // ------------------- timesheet menu -------------------
-        $times = new MenuItemModel('times', 'time_tracking', null, [], 'timesheet');
+        // names (earlier): "My Timesheets" (Time Tracking) with "Log Time" (My timesheets),
+        // "Calendar Entry" (Calendar, moved up to second) and "Bulk Entry (Week)" (Weekly hours)
+        $times = new MenuItemModel('times', 'My Timesheets', null, [], 'timesheet');
 
         if ($auth->isGranted('view_own_timesheet')) {
-            $timesheets = new MenuItemModel('timesheet', 'my_times', 'timesheet', [], 'timesheet');
+            $timesheets = new MenuItemModel('timesheet', 'Log Time', 'timesheet', [], 'timesheet');
             $timesheets->setChildRoutes(['timesheet_export', 'timesheet_edit', 'timesheet_create', 'timesheet_multi_update']);
             $times->addChild($timesheets);
 
+            $times->addChild(
+                new MenuItemModel('calendar', 'Calendar Entry', 'calendar', [], 'calendar')
+            );
+
             if ($auth->isGranted('quick-entry')) {
                 $times->addChild(
-                    new MenuItemModel('quick_entry', 'quick_entry.title', 'quick_entry', [], 'weekly-times')
+                    new MenuItemModel('quick_entry', 'Bulk Entry (Week)', 'quick_entry', [], 'weekly-times')
                 );
             }
-
-            $times->addChild(
-                new MenuItemModel('calendar', 'calendar', 'calendar', [], 'calendar')
-            );
         }
 
         if ($times->hasChildren()) {
@@ -112,6 +116,24 @@ final class MenuSubscriber implements EventSubscriberInterface
             $projectTimes->addChild(
                 new MenuItemModel('export', 'export', 'export', [], 'export')
             );
+        }
+
+        // Project Managers and Project Leads put their teams together: projects, people and what each one does there
+        if ($auth->isGranted('ROLE_TEAMLEAD')) {
+            $teamMapping = new MenuItemModel('team_mapping', 'Team Mapping', 'team_mapping', [], 'fas fa-users-cog');
+            $projectTimes->addChild($teamMapping);
+        }
+
+        // managers and leads map what their people book time on (Epic > Feature > User Story ... per project)
+        try {
+            $canMap = $this->workModels->canManage($user);
+        } catch (\Exception) {
+            $canMap = false;
+        }
+        if ($canMap) {
+            $mapping = new MenuItemModel('work_items', 'Project Mapping', 'work_items', [], 'fas fa-sitemap');
+            $mapping->setChildRoutes(['work_items_create', 'work_items_edit']);
+            $projectTimes->addChild($mapping);
         }
 
         if ($projectTimes->hasChildren()) {
@@ -198,11 +220,12 @@ final class MenuSubscriber implements EventSubscriberInterface
             $menu->addChild($activities);
         }
 
-        if ($isAdmin && $auth->isGranted('view_tag')) {
-            $menu->addChild(
-                new MenuItemModel('tags', 'tags', 'tags', [], 'fas fa-tags')
-            );
-        }
+        // Tags are hidden for now: remove the comment marks to bring them back
+        // if ($isAdmin && $auth->isGranted('view_tag')) {
+        //     $menu->addChild(
+        //         new MenuItemModel('tags', 'tags', 'tags', [], 'fas fa-tags')
+        //     );
+        // }
 
         $this->addDivider($menu);
 
@@ -224,11 +247,13 @@ final class MenuSubscriber implements EventSubscriberInterface
             $menu->addChild($users);
         }
 
-        if ($auth->isGranted('view_team')) {
-            $teams = new MenuItemModel('teams', 'teams', 'admin_team', [], 'team');
-            $teams->setChildRoutes(['admin_team_create', 'admin_team_edit']);
-            $menu->addChild($teams);
-        }
+        // Teams are put together by Project Managers and Leads on "Team Mapping" (My Projects), not by the administrator.
+        // The page stays reachable for a system administrator; remove the comment marks to show it in the menu again.
+        // if ($auth->isGranted('view_team')) {
+        //     $teams = new MenuItemModel('teams', 'teams', 'admin_team', [], 'team');
+        //     $teams->setChildRoutes(['admin_team_create', 'admin_team_edit']);
+        //     $menu->addChild($teams);
+        // }
 
         if ($menu->hasChildren()) {
             $this->addDivider($menu);

@@ -12,6 +12,7 @@ namespace App\Controller;
 use App\Configuration\SystemConfiguration;
 use App\Entity\MetaTableTypeInterface;
 use App\Entity\Phase;
+use App\Entity\Task;
 use App\Entity\Timesheet;
 use App\EventSubscriber\TimesheetStatusSubscriber;
 use App\Event\TimesheetDuplicatePostEvent;
@@ -34,6 +35,8 @@ use App\Timesheet\TimesheetService;
 use App\Timesheet\TrackingMode\TrackingModeInterface;
 use App\Utils\DataTable;
 use App\Utils\PageSetup;
+use App\WorkModel\ExportContext;
+use App\WorkModel\WorkModelService;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormTypeInterface;
@@ -42,12 +45,16 @@ use Symfony\Component\HttpFoundation\Response;
 
 abstract class TimesheetAbstractController extends AbstractController
 {
+    /** the list tab for Agile and Waterfall projects together */
+    private const VIEW_PROJECT = 'project';
+
     public function __construct(
         protected readonly TimesheetRepository $repository,
         protected readonly EventDispatcherInterface $dispatcher,
         protected readonly TimesheetService $service,
         protected readonly SystemConfiguration $configuration,
-        protected readonly TagRepository $tagRepository
+        protected readonly TagRepository $tagRepository,
+        protected readonly WorkModelService $workModels
     ) {
     }
 
@@ -68,10 +75,47 @@ abstract class TimesheetAbstractController extends AbstractController
 
         $this->prepareQuery($query);
 
-        $result = $this->repository->getTimesheetResult($query);
+        // The list can be narrowed to one kind of work (the tabs above the table): Agile, Waterfall, Pre-sales or
+        // Non-project. Each has its own columns, named the way that model names its levels. The choice is kept
+        // while the person pages through the list or searches.
+        // Only the kinds of work the entries really have are offered. Somebody whose entries are all of one kind
+        // (one Agile project, say) is not asked anything: the list shows that kind straight away, with its columns.
+        $views = $this->getListViews($query);
+        $session = $request->getSession();
+        if (\count($views) <= 1) {
+            $view = (string) (array_key_first($views) ?? 'all');
+            $views = [];
+        } else {
+            $views = ['all' => 'All'] + $views;
+            $view = (string) $request->query->get('view', (string) $session->get('timesheet_view_' . $route, 'all'));
+            if (!isset($views[$view])) {
+                $view = 'all';
+            }
+            $session->set('timesheet_view_' . $route, $view);
+        }
+
+        // the view narrows what is read, without showing up as a filter of the search form
+        $listQuery = $query;
+        if ($view !== 'all') {
+            $listQuery = clone $query;
+            $wanted = $this->getViewProjectIds($view);
+            // a project filter of the search form stays in force
+            $picked = [];
+            foreach ($query->getProjects() as $project) {
+                $picked[] = \is_int($project) ? $project : (int) $project->getId();
+            }
+            if ($picked !== []) {
+                $wanted = array_values(array_intersect($wanted, $picked));
+            }
+            // no project of this kind: an ID that does not exist keeps the list empty
+            $listQuery->setProjects($wanted !== [] ? $wanted : [0]);
+        }
+
+        $result = $this->repository->getTimesheetResult($listQuery);
         $metaColumns = $this->findMetaColumns($query, $location);
 
-        $table = new DataTable($this->getTableName(), $query);
+        // every view remembers its own choice of visible columns
+        $table = new DataTable($this->getTableName() . ($view !== 'all' ? '_' . $view : ''), $query);
         $table->setPagination($result->getPagerfanta());
         $table->setSearchForm($form);
         $table->setBatchForm($this->getMultiUpdateActionForm());
@@ -101,14 +145,39 @@ abstract class TimesheetAbstractController extends AbstractController
 
         // Customer column is switched off: people pick the project directly
         // $table->addColumn('customer', ['class' => 'd-none d-md-table-cell']);
-        $table->addColumn('project', ['class' => 'd-none d-xl-table-cell']);
-        // Phase (custom field) is shown right after the project
-        foreach ($metaColumns as $metaColumn) {
-            if ($metaColumn->getName() === Phase::TIMESHEET_META_FIELD) {
-                $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none d-xl-table-cell', 'orderBy' => false, 'data' => $metaColumn]);
+        // the two built-in projects ("Non-Project Activities", "Pre-Sales") need no project column in their own view
+        if (!\in_array($view, [WorkModelService::NON_PROJECT, WorkModelService::PRESALES], true)) {
+            $table->addColumn('project', ['class' => 'd-none d-lg-table-cell']);
+        }
+
+        // What was picked below the project (custom fields) comes right after it.
+        // - "All": one column holding the whole path (Epic > Feature > User Story, Lead > Phase, or the Phase)
+        // - a view of one kind of work: one column per level, named the way that model names it
+        $levelNames = array_keys(WorkModelService::META_LEVELS);
+        $placed = array_merge($levelNames, [Phase::TIMESHEET_META_FIELD]);
+        $levelColumns = match ($view) {
+            // "Project" holds Agile and Waterfall together: one "Work item" column, like "All"
+            // (separate Agile and Waterfall views had one column per level: Epic, Feature, User Story ...)
+            WorkModelService::AGILE, WorkModelService::WATERFALL => array_combine($levelNames, \array_slice(WorkModelService::LEVELS[$view], 0, 3)),
+            WorkModelService::PRESALES => [$levelNames[0] => 'Lead', Phase::TIMESHEET_META_FIELD => 'Phase'],
+            WorkModelService::NON_PROJECT => [Phase::TIMESHEET_META_FIELD => 'Phase'],
+            default => [$levelNames[0] => 'Work item'],
+        };
+        foreach ($levelColumns as $placedName => $title) {
+            foreach ($metaColumns as $metaColumn) {
+                if ($metaColumn->getName() === $placedName) {
+                    $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $title, 'class' => 'd-none d-lg-table-cell', 'orderBy' => false, 'data' => $metaColumn]);
+                }
             }
         }
-        $table->addColumn('activity', ['class' => 'd-none d-xl-table-cell']);
+        $table->addColumn('activity', ['class' => 'd-none d-lg-table-cell']);
+        // Task (custom field) is shown right after the activity
+        foreach ($metaColumns as $metaColumn) {
+            if ($metaColumn->getName() === Task::TIMESHEET_META_FIELD) {
+                $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none d-lg-table-cell', 'orderBy' => false, 'data' => $metaColumn]);
+            }
+        }
+        $placed[] = Task::TIMESHEET_META_FIELD;
         // Status (custom field) is shown right after the activity
         foreach ($metaColumns as $metaColumn) {
             if ($metaColumn->getName() === TimesheetStatusSubscriber::FIELD) {
@@ -116,10 +185,11 @@ abstract class TimesheetAbstractController extends AbstractController
             }
         }
         $table->addColumn('description', ['class' => 'd-none']);
-        $table->addColumn('tags', ['class' => 'd-none', 'orderBy' => false]);
+        // Tags are hidden for now: remove the comment marks to bring them back
+        // $table->addColumn('tags', ['class' => 'd-none', 'orderBy' => false]);
 
         foreach ($metaColumns as $metaColumn) {
-            if ($metaColumn->getName() === TimesheetStatusSubscriber::FIELD || $metaColumn->getName() === Phase::TIMESHEET_META_FIELD) {
+            if ($metaColumn->getName() === TimesheetStatusSubscriber::FIELD || \in_array($metaColumn->getName(), $placed, true)) {
                 continue;
             }
             $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none', 'orderBy' => false, 'data' => $metaColumn]);
@@ -129,7 +199,8 @@ abstract class TimesheetAbstractController extends AbstractController
             $table->addColumn('username', ['class' => 'd-none d-md-table-cell', 'orderBy' => 'user']);
         }
 
-        $table->addColumn('billable', ['class' => 'text-center d-none w-min']);
+        // Billable is hidden for now: remove the comment marks to bring it back
+        // $table->addColumn('billable', ['class' => 'text-center d-none w-min']);
         $table->addColumn('exported', ['class' => 'text-center d-none w-min']);
         $table->addColumn('actions', ['class' => 'actions']);
 
@@ -145,8 +216,67 @@ abstract class TimesheetAbstractController extends AbstractController
             'showSummary' => $this->includeSummary(),
             'metaColumns' => $metaColumns,
             'allowMarkdown' => $this->hasMarkdownSupport(),
-            'editRoute' => $this->getEditRoute()
+            'editRoute' => $this->getEditRoute(),
+            'listViews' => $views,
+            'listView' => $view,
+            'listRoute' => $route,
+            'projectModels' => $this->workModels->getProjectModels(),
         ]);
+    }
+
+    /**
+     * The kinds of work the entries of this list have, and what their tabs are called. The list of one
+     * person looks at that person's entries, the team list at everybody's.
+     *
+     * @return array<string, string>
+     */
+    protected function getListViews(TimesheetQuery $query): array
+    {
+        // Agile and Waterfall are both projects: one "Project" tab for the two
+        // (earlier: separate tabs 'Agile' and 'Waterfall')
+        $names = [
+            WorkModelService::AGILE => 'Project',
+            WorkModelService::WATERFALL => 'Project',
+            WorkModelService::PRESALES => 'Pre-Sales',
+            WorkModelService::NON_PROJECT => 'Non-Project',
+        ];
+        $keys = [
+            WorkModelService::AGILE => self::VIEW_PROJECT,
+            WorkModelService::WATERFALL => self::VIEW_PROJECT,
+            WorkModelService::PRESALES => WorkModelService::PRESALES,
+            WorkModelService::NON_PROJECT => WorkModelService::NON_PROJECT,
+        ];
+
+        try {
+            $used = $this->workModels->getModelsInUse($query->getUser());
+        } catch (\Exception) {
+            return [];
+        }
+
+        $views = [];
+        foreach ($used as $model) {
+            $views[$keys[$model]] = $names[$model];
+        }
+
+        return $views;
+    }
+
+    /**
+     * The projects one tab of the list shows: "Project" is every Agile and Waterfall project.
+     *
+     * @return array<int>
+     */
+    private function getViewProjectIds(string $view): array
+    {
+        $models = $view === self::VIEW_PROJECT ? [WorkModelService::AGILE, WorkModelService::WATERFALL] : [$view];
+        $ids = [];
+        foreach ($this->workModels->getProjectModels() as $projectId => $model) {
+            if (\in_array($model, $models, true)) {
+                $ids[] = (int) $projectId;
+            }
+        }
+
+        return $ids;
     }
 
     /**
@@ -281,12 +411,34 @@ abstract class TimesheetAbstractController extends AbstractController
             $query->getEnd()->setTime(23, 59, 59);
         }
 
-        $entries = $this->repository->getTimesheetResult($query);
+        // the export follows the tab that is open in the list (Agile, Waterfall ...): only that kind of work
+        $listQuery = $query;
+        $route = $this->getTimesheetRoute();
+        $views = $this->getListViews($query);
+        $view = \count($views) > 1 ? (string) $request->getSession()->get('timesheet_view_' . $route, 'all') : 'all';
+        if (isset($views[$view])) {
+            $listQuery = clone $query;
+            $wanted = $this->getViewProjectIds($view);
+            $picked = [];
+            foreach ($query->getProjects() as $project) {
+                $picked[] = \is_int($project) ? $project : (int) $project->getId();
+            }
+            if ($picked !== []) {
+                $wanted = array_values(array_intersect($wanted, $picked));
+            }
+            $listQuery->setProjects($wanted !== [] ? $wanted : [0]);
+        }
+
+        $entries = $this->repository->getTimesheetResult($listQuery);
+        $results = $entries->getResults();
+
+        // the columns follow the kind of work that is exported (see WorkModelService::describeExport)
+        ExportContext::set($this->workModels->describeExport($results));
 
         $oldMaxExecTime = \ini_get('max_execution_time');
         ini_set('max_execution_time', $this->configuration->getExportTimeout());
 
-        $response = $exporter->render($entries->getResults(), $query);
+        $response = $exporter->render($results, $query);
 
         ini_set('max_execution_time', $oldMaxExecTime);
 
@@ -653,7 +805,7 @@ abstract class TimesheetAbstractController extends AbstractController
 
     protected function createPageSetup(): PageSetup
     {
-        $page = new PageSetup('timesheet.title');
+        $page = new PageSetup('Log Time');
         $page->setHelp('timesheet.html');
 
         return $page;

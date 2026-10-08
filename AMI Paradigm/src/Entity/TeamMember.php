@@ -46,6 +46,31 @@ class TeamMember
     #[Serializer\Groups(['Default', 'Entity', 'Team_Entity', 'User_Entity'])]
     private bool $teamlead = false;
 
+    /**
+     * What the person does in this team (Frontend Developer, Tester ...), set by the team's Project Manager or Lead.
+     * Several roles are kept together, separated by commas: "Frontend Developer, Tester / QA".
+     */
+    #[ORM\Column(name: 'team_role', type: Types::STRING, length: 255, nullable: true)]
+    private ?string $teamRole = null;
+
+    public function getTeamRole(): ?string
+    {
+        return $this->teamRole;
+    }
+
+    /**
+     * @return array<string> the roles one by one
+     */
+    public function getTeamRoles(): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', (string) $this->teamRole)), static fn (string $role) => $role !== ''));
+    }
+
+    public function setTeamRole(?string $teamRole): void
+    {
+        $this->teamRole = $teamRole !== null && trim($teamRole) !== '' ? trim($teamRole) : null;
+    }
+
     public function getId(): ?int
     {
         return $this->id;

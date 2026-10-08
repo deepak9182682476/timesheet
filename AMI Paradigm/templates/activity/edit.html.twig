@@ -67,7 +67,7 @@
                     {{ form_row(form.visible) }}
                 </div>
                 <div class="col-md-6">
-                    {{ form_row(form.billable) }}
+                    {# Billable is hidden for now (the field is switched off in the form class) #}{% if form.billable is defined %}{{ form_row(form.billable) }}{% endif %}
                 </div>
             </div>
             {{ form_rest(form) }}

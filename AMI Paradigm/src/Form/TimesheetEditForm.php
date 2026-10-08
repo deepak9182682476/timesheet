@@ -144,7 +144,8 @@ class TimesheetEditForm extends AbstractType
             $descriptionOptions['attr'] = ['autofocus' => 'autofocus'];
         }
         $builder->add('description', DescriptionType::class, $descriptionOptions);
-        $builder->add('tags', TagsType::class, ['required' => false]);
+        // Tags are hidden for now: remove the comment marks to bring them back
+        // $builder->add('tags', TagsType::class, ['required' => false]);
         $this->addRates($builder, $currency, $options);
         $this->addUser($builder, $options);
         $builder->add('metaFields', MetaFieldsCollectionType::class);
@@ -423,9 +424,10 @@ class TimesheetEditForm extends AbstractType
 
     protected function addBillable(FormBuilderInterface $builder, array $options): void
     {
-        if ($options['include_billable']) {
-            $builder->add('billableMode', TimesheetBillableType::class);
-        }
+        // Billable is hidden for now: remove the comment marks to bring it back
+        // if ($options['include_billable']) {
+        //     $builder->add('billableMode', TimesheetBillableType::class);
+        // }
 
         $builder->addModelTransformer(new CallbackTransformer(
             function (Timesheet $record) {
@@ -451,7 +453,7 @@ class TimesheetEditForm extends AbstractType
     public function configureOptions(OptionsResolver $resolver): void
     {
         $maxMinutes = $this->systemConfiguration->getTimesheetLongRunningDuration();
-        $maxHours = 10;
+        $maxHours = DurationType::MAX_ENTRY_HOURS;
         if ($maxMinutes > 0) {
             $maxHours = (int) ($maxMinutes / 60);
         }

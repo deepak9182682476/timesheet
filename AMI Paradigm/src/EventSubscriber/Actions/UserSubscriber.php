@@ -75,8 +75,18 @@ final class UserSubscriber extends AbstractActionsSubscriber
             $event->addActionToSubmenu('filter', 'teams', ['url' => $this->path('admin_team', ['users[]' => $user->getId()]), 'title' => 'teams']);
         }
 
-        if ($event->isIndexView() && $this->isGranted('delete', $user)) {
-            $event->addDelete($this->path('admin_user_delete', ['id' => $user->getId()]));
+        // Users are never deleted, only disabled (with a reason, see UserStatusController).
+        // To bring "Delete" back, remove the comment marks and allow "delete" again in UserVoter.
+        // if ($event->isIndexView() && $this->isGranted('delete', $user)) {
+        //     $event->addDelete($this->path('admin_user_delete', ['id' => $user->getId()]));
+        // }
+        if ($event->getUser()->getId() !== $user->getId() && $this->isGranted('edit', $user)) {
+            $event->addDivider();
+            if ($user->isEnabled()) {
+                $event->addAction('disable-user', ['url' => $this->path('admin_user_disable', ['id' => $user->getId()]), 'title' => 'Disable', 'translation_domain' => false, 'icon' => 'fas fa-user-slash', 'class' => 'text-danger']);
+            } else {
+                $event->addAction('enable-user', ['url' => $this->path('admin_user_enable', ['id' => $user->getId()]), 'title' => 'Enable', 'translation_domain' => false, 'icon' => 'fas fa-user-check']);
+            }
         }
     }
 }

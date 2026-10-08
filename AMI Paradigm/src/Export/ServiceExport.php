@@ -92,8 +92,10 @@ final class ServiceExport
         $renderer = [
             $this->csvRendererFactory->createDefault(),
             $this->xlsxRendererFactory->createDefault(),
-            $this->pdfRendererFactory->create('pdf', 'export/pdf-layout.html.twig', 'pdf'),
-            $this->htmlRendererFactory->create('print', 'export/print.html.twig'),
+            // The plain timesheet layouts (templates/export/ami-*.twig). The earlier ones were
+            // 'export/pdf-layout.html.twig' and 'export/print.html.twig'.
+            $this->pdfRendererFactory->create('pdf', 'export/ami-timesheet.pdf.twig', 'pdf'),
+            $this->htmlRendererFactory->create('print', 'export/ami-print.html.twig'),
         ];
 
         foreach ($this->exportTemplateRepository->findAll() as $template) {
@@ -126,6 +128,12 @@ final class ServiceExport
                 foreach ($pdfTemplates as $pdfTpl) {
                     $tplName = basename($pdfTpl);
                     if (stripos($tplName, '-bundle') !== false) {
+                        continue;
+                    }
+
+                    // The earlier "Timesheet" PDF is hidden, the new layout replaces it:
+                    // remove these three lines to offer it again as a second PDF choice
+                    if ($tplName === 'timesheet.pdf.twig') {
                         continue;
                     }
 
@@ -182,10 +190,12 @@ final class ServiceExport
     {
         // TODO 3.0 cache the result, as this is one extra database query on the timesheet pages
         $exporter = [
-            $this->pdfRendererFactory->create('pdf', '@export/timesheet.pdf.twig'),
+            // The plain timesheet layouts (templates/export/ami-*.twig). The earlier ones were
+            // '@export/timesheet.pdf.twig' and 'timesheet/export.html.twig'.
+            $this->pdfRendererFactory->create('pdf', 'export/ami-timesheet.pdf.twig'),
             $this->xlsxRendererFactory->createDefault(),
             $this->csvRendererFactory->createDefault(),
-            $this->htmlRendererFactory->create('print', 'timesheet/export.html.twig'),
+            $this->htmlRendererFactory->create('print', 'export/ami-print.html.twig'),
         ];
 
         foreach ($this->exportTemplateRepository->findAll() as $template) {

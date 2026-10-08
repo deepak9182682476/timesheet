@@ -11,6 +11,7 @@ namespace App\Controller;
 
 use App\Entity\TeamEvent;
 use App\Form\TeamEventEditForm;
+use App\Holiday\HolidayCalendar;
 use App\TeamEvent\TeamEventService;
 use App\Utils\PageSetup;
 use Symfony\Component\Form\FormError;
@@ -26,8 +27,13 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('IS_AUTHENTICATED_REMEMBERED')]
 final class TeamEventController extends AbstractController
 {
-    public function __construct(private readonly TeamEventService $events)
-    {
+    /** festival and optional holidays are listed from this many days before */
+    private const HOLIDAY_NOTICE_DAYS = 7;
+
+    public function __construct(
+        private readonly TeamEventService $events,
+        private readonly HolidayCalendar $holidays,
+    ) {
     }
 
     #[Route(path: '/', name: 'team_events', methods: ['GET'])]
@@ -43,8 +49,49 @@ final class TeamEventController extends AbstractController
             $editable[$event->getId()] = $this->events->canEdit($user, $event);
         }
 
+        // festival and optional holidays from a week before until the day itself is over;
+        // a person with an office location only sees what is a holiday or optional holiday at that office
+        $myOffice = HolidayCalendar::getUserLocation($user);
+        $last = (new \DateTime('today'))->modify('+' . self::HOLIDAY_NOTICE_DAYS . ' days')->format('Y-m-d');
+        $holidays = [];
+        foreach ($this->holidays->getDaysByLocation() as $date => $day) {
+            if ($date < $today->format('Y-m-d') || $date > $last) {
+                continue;
+            }
+            if ($myOffice !== null) {
+                $code = $day['codes'][$myOffice] ?? HolidayCalendar::WORKING;
+                if ($code === HolidayCalendar::HOLIDAY || $code === HolidayCalendar::OPTIONAL) {
+                    $holidays[] = [
+                        'date' => new \DateTime($date),
+                        'name' => $day['name'],
+                        'mine' => $code === HolidayCalendar::HOLIDAY ? 'Holiday' : 'Optional holiday',
+                    ];
+                }
+                continue;
+            }
+            $where = [HolidayCalendar::HOLIDAY => [], HolidayCalendar::OPTIONAL => []];
+            foreach ($day['codes'] as $location => $code) {
+                if (isset($where[$code])) {
+                    $where[$code][] = $location;
+                }
+            }
+            if ($where[HolidayCalendar::HOLIDAY] === [] && $where[HolidayCalendar::OPTIONAL] === []) {
+                continue;
+            }
+            $holidays[] = [
+                'date' => new \DateTime($date),
+                'name' => $day['name'],
+                'holiday_at' => $where[HolidayCalendar::HOLIDAY],
+                'optional_at' => $where[HolidayCalendar::OPTIONAL],
+                'everywhere' => \count($where[HolidayCalendar::HOLIDAY]) === \count(HolidayCalendar::LOCATIONS),
+            ];
+        }
+
         return $this->render('events/index.html.twig', [
-            'page_setup' => new PageSetup('Events'),
+            'page_setup' => new PageSetup('Notifications'),
+            'team_leave' => $this->events->getTeammateLeave($user),
+            'holidays' => $holidays,
+            'my_office' => $myOffice,
             'upcoming' => $upcoming,
             'past' => $past,
             'editable' => $editable,
@@ -135,9 +182,19 @@ final class TeamEventController extends AbstractController
         }
 
         $audiences = [];
-        $allowEveryone = $this->events->isAdmin($user) || ($event->getId() !== null && $event->getTeam() === null && $event->getUser() === null);
+        $allowEveryone = $this->events->isAdmin($user) || ($event->getId() !== null && $event->getTeam() === null && $event->getUser() === null && !$event->isAllMyTeams());
         if ($allowEveryone) {
             $audiences['Everyone'] = 'all';
+        }
+        // every team of the person adding the event, in one go
+        $ownTeams = [];
+        foreach ($user->getTeams() as $team) {
+            $ownTeams[] = (string) $team->getName();
+        }
+        sort($ownTeams);
+        $allowMyTeams = \count($ownTeams) > 1 || $event->isAllMyTeams();
+        if ($allowMyTeams) {
+            $audiences['All my teams (' . implode(', ', $ownTeams) . ')'] = 'my_teams';
         }
         foreach ($teams as $key => $team) {
             $audiences['Teams'][(string) $team->getName()] = $key;
@@ -151,6 +208,8 @@ final class TeamEventController extends AbstractController
             $current = 'u:' . $event->getUser()->getId();
         } elseif ($event->getTeam() !== null) {
             $current = 't:' . $event->getTeam()->getId();
+        } elseif ($event->isAllMyTeams()) {
+            $current = 'my_teams';
         } elseif ($event->getId() !== null) {
             $current = 'all';
         }
@@ -178,7 +237,10 @@ final class TeamEventController extends AbstractController
             $audience = (string) $form->get('audience')->getData();
             $event->setTeam(null);
             $event->setUser(null);
-            if (isset($teams[$audience])) {
+            $event->setAllMyTeams(false);
+            if ($audience === 'my_teams' && $allowMyTeams) {
+                $event->setAllMyTeams(true);
+            } elseif (isset($teams[$audience])) {
                 $event->setTeam($teams[$audience]);
             } elseif (isset($people[$audience])) {
                 $event->setUser($people[$audience]);
@@ -219,7 +281,7 @@ final class TeamEventController extends AbstractController
         }
 
         return $this->render('events/edit.html.twig', [
-            'page_setup' => new PageSetup('Events'),
+            'page_setup' => new PageSetup('Notifications'),
             'event' => $event,
             'form' => $form->createView(),
         ]);

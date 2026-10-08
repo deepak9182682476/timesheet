@@ -136,7 +136,7 @@
       </trans-unit>
       <trans-unit id="_x2He8M" resname="user_profile">
         <source>user_profile</source>
-        <target>My profile</target>
+        <target>My Profile</target>
       </trans-unit>
       <trans-unit id="T4nAM7X" resname="api_token">
         <source>api_token</source>
@@ -200,7 +200,7 @@
       </trans-unit>
       <trans-unit id="yxQop43" resname="all_times">
         <source>all_times</source>
-        <target>Team members timesheets</target>
+        <target>Team Log Time</target>
       </trans-unit>
       <trans-unit id="IeshU90" resname="customers">
         <source>customers</source>
@@ -480,7 +480,7 @@
       </trans-unit>
       <trans-unit id="Ia0kvPi" resname="my_team_projects">
         <source>my_team_projects</source>
-        <target>My projects</target>
+        <target>My Projects</target>
       </trans-unit>
       <trans-unit id="tfkKlua" resname="progress">
         <source>progress</source>
@@ -884,11 +884,11 @@
       </trans-unit>
       <trans-unit id="718iPw6" resname="ROLE_ADMIN">
         <source>ROLE_ADMIN</source>
-        <target>Project manager</target>
+        <target>Project Manager</target>
       </trans-unit>
       <trans-unit id="yttGLAB" resname="ROLE_TEAMLEAD">
         <source>ROLE_TEAMLEAD</source>
-        <target>Project lead</target>
+        <target>Project Lead</target>
       </trans-unit>
       <trans-unit id="rvO5ZXf" resname="ROLE_USER">
         <source>ROLE_USER</source>
@@ -1316,7 +1316,7 @@
       </trans-unit>
       <trans-unit id="iwWaUoa" resname="export.filter">
         <source>export.filter</source>
-        <target>Filter data for export</target>
+        <target>Filter Data for Export</target>
       </trans-unit>
       <trans-unit id="vjmoQGo" resname="export.period">
         <source>export.period</source>
@@ -1904,7 +1904,7 @@
       </trans-unit>
       <trans-unit id="Qh5mV5Q" resname="create-timesheet-multiuser">
         <source>create-timesheet-multiuser</source>
-        <target>For multiple users</target>
+        <target>For Multiple Users</target>
       </trans-unit>
       <trans-unit id="T_PN1AT" resname="permissions">
         <source>permissions</source>

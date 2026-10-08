@@ -315,7 +315,7 @@ final class QuickEntryController extends AbstractController
             }
         }
 
-        $page = new PageSetup('quick_entry.title');
+        $page = new PageSetup('Bulk Entry (Week)');
         $page->setHelp('weekly-times.html');
         $page->setPaginationForm($weeklyForm);
         $page->setActionName('weekly-times');

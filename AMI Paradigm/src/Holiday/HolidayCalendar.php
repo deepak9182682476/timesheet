@@ -28,6 +28,19 @@ final class HolidayCalendar
     /** Office locations, in the column order of the calendar */
     public const LOCATIONS = ['Vadodara', 'Bangalore/Mysore', 'Chennai', 'Hyderabad', 'Mumbai/Pune', 'Delhi/NCR'];
 
+    /** The user preference holding a person's office (set by an administrator on the person's preferences) */
+    public const USER_PREFERENCE = 'office_location';
+
+    /**
+     * The office a person belongs to, or null when none is set.
+     */
+    public static function getUserLocation(\App\Entity\User $user): ?string
+    {
+        $location = $user->getPreferenceValue(self::USER_PREFERENCE);
+
+        return \is_string($location) && \in_array($location, self::LOCATIONS, true) ? $location : null;
+    }
+
     /**
      * date (Y-m-d) => [name, one code per location in the order of LOCATIONS]
      */

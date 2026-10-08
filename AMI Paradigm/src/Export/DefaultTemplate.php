@@ -21,6 +21,7 @@ use App\Repository\Query\ActivityQuery;
 use App\Repository\Query\CustomerQuery;
 use App\Repository\Query\ProjectQuery;
 use App\Repository\Query\TimesheetQuery;
+use App\WorkModel\ExportContext;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\DependencyInjection\Attribute\Exclude;
 
@@ -80,65 +81,35 @@ final class DefaultTemplate implements TemplateInterface
             $durationFormatter = $user->isExportDecimal() ? 'duration_decimal' : 'duration';
         }
 
-        $columns = [
-            'date',
-            'begin',
-            'end',
-            $durationFormatter,
-            'currency',
-            'rate',
-            'internal_rate',
-            'hourly_rate',
-            'fixed_rate',
-            'user.alias',
-            'user.name',
-            'user.email',
-            'user.account_number',
-            'customer.name',
-            'project.name',
-            'activity.name',
-            'description',
-            'billable',
-            'tags',
-            'type',
-            'category',
-            'customer.number',
-            'project.number',
-            'customer.vat_id',
-            'project.order_number',
-        ];
+        // Only what people need to read a timesheet, in the order of the entry form:
+        // date, who, project, the levels of the project's model, activity, task, hours, description.
+        // The levels follow the kind of work that is exported (Epic, Feature, User Story for Agile, and so on).
+        $layout = ExportContext::get();
 
-        foreach ($this->findMetaColumns(new TimesheetMetaDisplayEvent($query, TimesheetMetaDisplayEvent::EXPORT)) as $metaField) {
-            if ($metaField->getName() !== null) {
-                $columns[] = 'timesheet.meta.' . $metaField->getName();
-            }
+        $columns = ['date'];
+        if ($layout['showEmployee']) {
+            $columns[] = 'user.alias';
         }
+        if ($layout['showProject']) {
+            $columns[] = 'project.name';
+        }
+        foreach (array_keys($layout['columns']) as $metaName) {
+            $columns[] = 'timesheet.meta.' . $metaName;
+        }
+        $columns[] = 'activity.name';
+        $columns[] = 'timesheet.meta.task';
+        $columns[] = $durationFormatter;
+        $columns[] = 'description';
 
-        foreach ($this->findMetaColumns(new CustomerMetaDisplayEvent(new CustomerQuery(), CustomerMetaDisplayEvent::EXPORT)) as $metaField) {
-            if ($metaField->getName() !== null) {
-                $columns[] = 'customer.meta.' . $metaField->getName();
-            }
-        }
-
-        foreach ($this->findMetaColumns(new ProjectMetaDisplayEvent(new ProjectQuery(), ProjectMetaDisplayEvent::EXPORT)) as $metaField) {
-            if ($metaField->getName() !== null) {
-                $columns[] = 'project.meta.' . $metaField->getName();
-            }
-        }
-
-        foreach ($this->findMetaColumns(new ActivityMetaDisplayEvent(new ActivityQuery(), ActivityMetaDisplayEvent::EXPORT)) as $metaField) {
-            if ($metaField->getName() !== null) {
-                $columns[] = 'activity.meta.' . $metaField->getName();
-            }
-        }
-
-        $event = new UserPreferenceDisplayEvent(UserPreferenceDisplayEvent::EXPORT);
-        $this->eventDispatcher->dispatch($event);
-        foreach ($event->getPreferences() as $metaField) {
-            if ($metaField->getName() !== null) {
-                $columns[] = 'user.meta.' . $metaField->getName();
-            }
-        }
+        /*
+         * The full list of columns the export had before, switched off: start and end time, prices, e-mail,
+         * staff number, customer, numbers of customer and project, and every custom field of customers,
+         * projects, activities and users. To bring one back, add its name to $columns above.
+         *
+         * 'begin', 'end', 'currency', 'rate', 'internal_rate', 'hourly_rate', 'fixed_rate', 'user.name', 'user.email',
+         * 'user.account_number', 'customer.name', 'billable', 'tags', 'type', 'category', 'customer.number',
+         * 'project.number', 'customer.vat_id', 'project.order_number'
+         */
 
         return $columns;
     }

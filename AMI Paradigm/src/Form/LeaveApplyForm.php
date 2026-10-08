@@ -43,6 +43,7 @@ final class LeaveApplyForm extends AbstractType
                 'help' => 'The last day you are away, not the day you return. Leave empty for a single day.',
             ])
             // only used for "Optional holiday": which office's optional holidays apply
+            // filled in (and fixed) when an administrator set the person's office on their preferences
             ->add('location', ChoiceType::class, [
                 'label' => 'Office location',
                 'mapped' => false,
@@ -50,6 +51,9 @@ final class LeaveApplyForm extends AbstractType
                 'choices' => array_combine(HolidayCalendar::LOCATIONS, HolidayCalendar::LOCATIONS),
                 'placeholder' => '',
                 'translation_domain' => false,
+                'data' => $options['office'],
+                'disabled' => $options['office'] !== null,
+                'help' => $options['office'] !== null ? 'Your office, set by the administrator.' : null,
             ])
             ->add('description', TextareaType::class, [
                 'label' => 'Reason',
@@ -66,6 +70,8 @@ final class LeaveApplyForm extends AbstractType
             'csrf_protection' => true,
             'csrf_field_name' => '_token',
             'csrf_token_id' => 'leave_apply',
+            'office' => null,
         ]);
+        $resolver->setAllowedTypes('office', ['null', 'string']);
     }
 }

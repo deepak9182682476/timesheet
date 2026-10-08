@@ -79,16 +79,17 @@ class ProjectEditForm extends AbstractType
                 'label' => 'description',
                 'required' => false,
             ])
-            ->add('invoiceText', InvoiceLabelType::class)
-            ->add('orderNumber', TextType::class, [
-                'label' => 'orderNumber',
-                'required' => false,
-            ])
-            ->add('orderDate', DatePickerType::class, array_merge($dateTimeOptions, [
-                'label' => 'orderDate',
-                'required' => false,
-                'force_time' => 'start',
-            ]))
+            // Invoice settings are hidden for now: remove the comment marks to bring them back
+            // ->add('invoiceText', InvoiceLabelType::class)
+            // ->add('orderNumber', TextType::class, [
+            //     'label' => 'orderNumber',
+            //     'required' => false,
+            // ])
+            // ->add('orderDate', DatePickerType::class, array_merge($dateTimeOptions, [
+            //     'label' => 'orderDate',
+            //     'required' => false,
+            //     'force_time' => 'start',
+            // ]))
             ->add('start', DatePickerType::class, array_merge($dateTimeOptions, [
                 'label' => 'project_start',
                 'help' => 'help.project_start',
@@ -101,13 +102,14 @@ class ProjectEditForm extends AbstractType
                 'required' => false,
                 'force_time' => 'end',
             ]))
-            // a plain calendar day without timezone
-            ->add('lockedUntil', DatePickerType::class, array_merge($dateOnlyOptions, [
-                'label' => 'project_locked_until',
-                'help' => 'help.project_locked_until',
-                'required' => false,
-                'input' => 'datetime_immutable',
-            ]))
+            // "Times locked until" is hidden for now: remove the comment marks to bring it back
+            // (a plain calendar day without timezone)
+            // ->add('lockedUntil', DatePickerType::class, array_merge($dateOnlyOptions, [
+            //     'label' => 'project_locked_until',
+            //     'help' => 'help.project_locked_until',
+            //     'required' => false,
+            //     'input' => 'datetime_immutable',
+            // ]))
             ->add('customer', CustomerType::class, array_merge([
                 'placeholder' => ($isNew && null === $customer) ? '' : false,
                 'customers' => $customer,
@@ -118,18 +120,22 @@ class ProjectEditForm extends AbstractType
             ])
         ;
 
-        if ($isNew) {
-            $builder
-                ->add('teams', TeamType::class, [
-                    'required' => false,
-                    'multiple' => true,
-                    'expanded' => false,
-                    'by_reference' => false,
-                    'help' => 'help.teams',
-                ]);
-        }
+        // "Team" is hidden for now: teams are put together by Project Managers and Leads on "Team Mapping",
+        // not by the administrator here. Remove the comment marks to bring the field back.
+        // if ($isNew) {
+        //     $builder
+        //         ->add('teams', TeamType::class, [
+        //             'required' => false,
+        //             'multiple' => true,
+        //             'expanded' => false,
+        //             'by_reference' => false,
+        //             'help' => 'help.teams',
+        //         ]);
+        // }
 
         $this->addCommonFields($builder, $options);
+
+        // "Budget-Type" (monthly or whole project) stays: it says how the hourly quota counts
     }
 
     public function configureOptions(OptionsResolver $resolver): void

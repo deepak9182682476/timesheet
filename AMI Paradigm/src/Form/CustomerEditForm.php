@@ -67,10 +67,11 @@ class CustomerEditForm extends AbstractType
                 'label' => 'company',
                 'required' => false,
             ])
-            ->add('vatId', TextType::class, [
-                'label' => 'vat_id',
-                'required' => false,
-            ])
+            // VAT ID (shown under "Invoices") is hidden for now: remove the comment marks to bring it back
+            // ->add('vatId', TextType::class, [
+            //     'label' => 'vat_id',
+            //     'required' => false,
+            // ])
             ->add('contact', TextType::class, [
                 'label' => 'contact',
                 'required' => false,
@@ -122,12 +123,13 @@ class CustomerEditForm extends AbstractType
                 'required' => false,
                 'block_prefix' => 'phone',
             ])
-            ->add('fax', TelType::class, [
-                'label' => 'fax',
-                'required' => false,
-                'attr' => ['icon' => 'fax'],
-                'block_prefix' => 'phone',
-            ])
+            // Fax is hidden for now: remove the comment marks to bring it back
+            // ->add('fax', TelType::class, [
+            //     'label' => 'fax',
+            //     'required' => false,
+            //     'attr' => ['icon' => 'fax'],
+            //     'block_prefix' => 'phone',
+            // ])
             ->add('mobile', TelType::class, [
                 'label' => 'mobile',
                 'required' => false,
@@ -137,44 +139,49 @@ class CustomerEditForm extends AbstractType
             ->add('email', MailType::class, [
                 'required' => false,
             ])
-            ->add('homepage', UrlType::class, [
-                'label' => 'homepage',
-                'required' => false,
-                'block_prefix' => 'homepage',
-                'default_protocol' => 'https',
-            ])
+            // Homepage is hidden for now: remove the comment marks to bring it back
+            // ->add('homepage', UrlType::class, [
+            //     'label' => 'homepage',
+            //     'required' => false,
+            //     'block_prefix' => 'homepage',
+            //     'default_protocol' => 'https',
+            // ])
             ->add('timezone', TimezoneType::class, [
                 'label' => 'timezone',
             ])
-            ->add('invoiceText', TextareaType::class, [
-                'label' => 'invoiceText',
-                'help' => 'help.invoiceText',
-                'required' => false,
-            ])
-            ->add('invoiceTemplate', InvoiceTemplateType::class, [
-                'help' => 'help.invoiceTemplate_customer',
-                'required' => false,
-            ])
-            ->add('invoiceEmail', MailType::class, [
-                'label' => 'invoice_email',
-                'required' => false,
-            ])
-            ->add('buyerReference', TextType::class, [
-                'label' => 'buyerReference',
-                'required' => false,
-            ])
+            // Invoice settings are hidden for now: remove the comment marks to bring them back
+            // (the VAT ID above belongs to them as well)
+            // ->add('invoiceText', TextareaType::class, [
+            //     'label' => 'invoiceText',
+            //     'help' => 'help.invoiceText',
+            //     'required' => false,
+            // ])
+            // ->add('invoiceTemplate', InvoiceTemplateType::class, [
+            //     'help' => 'help.invoiceTemplate_customer',
+            //     'required' => false,
+            // ])
+            // ->add('invoiceEmail', MailType::class, [
+            //     'label' => 'invoice_email',
+            //     'required' => false,
+            // ])
+            // ->add('buyerReference', TextType::class, [
+            //     'label' => 'buyerReference',
+            //     'required' => false,
+            // ])
         ;
 
-        if ($isNew) {
-            $builder
-                ->add('teams', TeamType::class, [
-                    'required' => false,
-                    'multiple' => true,
-                    'expanded' => false,
-                    'by_reference' => false,
-                    'help' => 'help.teams',
-                ]);
-        }
+        // "Team" is hidden for now: teams are put together by Project Managers and Leads on "Team Mapping",
+        // not by the administrator here. Remove the comment marks to bring the field back.
+        // if ($isNew) {
+        //     $builder
+        //         ->add('teams', TeamType::class, [
+        //             'required' => false,
+        //             'multiple' => true,
+        //             'expanded' => false,
+        //             'by_reference' => false,
+        //             'help' => 'help.teams',
+        //         ]);
+        // }
 
         $this->addCommonFields($builder, $options);
     }

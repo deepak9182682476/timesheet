@@ -1,0 +1,236 @@
+{% extends 'base.html.twig' %}
+{% import "macros/widgets.html.twig" as widgets %}
+
+{# Team Mapping: Project Managers and Project Leads put their teams together (see TeamMappingController) #}
+{% block main %}
+    {% set csrf = csrf_token(token) %}
+
+    {% if notice %}
+        <div class="alert alert-success alert-dismissible mb-3" role="alert">
+            <div>{{ notice }}</div>
+            <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+        </div>
+    {% endif %}
+
+    <datalist id="team-roles">
+        {% for role in roles %}<option value="{{ role }}">{% endfor %}
+    </datalist>
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">My Teams</h3>
+            <div class="card-actions">
+                <a href="{{ path('team_mapping', {'new': 1}) }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>New Team</a>
+            </div>
+        </div>
+        {% if teams is empty %}
+            <div class="card-body text-secondary">
+                You do not lead a team yet. Use "New Team" to put one together: link its projects, add the people
+                the project needs and say what each one does there.
+            </div>
+        {% else %}
+            <div class="card-body py-2">
+                <ul class="nav nav-pills team-pills">
+                    {% for team in teams %}
+                        <li class="nav-item">
+                            <a class="nav-link{% if selected is not null and selected.id == team.id %} active{% endif %}" href="{{ path('team_mapping', {'team': team.id}) }}">
+                                {{ team.name }} <span class="badge bg-secondary-lt ms-1">{{ team.members|length }}</span>
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if creating %}
+        {# a new team #}
+        <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">New Team</h3></div>
+            <form method="post" action="{{ path('team_mapping_create') }}">
+                <input type="hidden" name="_token" value="{{ csrf }}">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label required" for="team-name">Team name</label>
+                            <input type="text" class="form-control" id="team-name" name="name" maxlength="100" required autofocus placeholder="For example hmel">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label" for="team-projects">Projects</label>
+                            <select class="form-select team-select" id="team-projects" name="projects[]" multiple>
+                                {% for id, name in projects %}<option value="{{ id }}">{{ name }}</option>{% endfor %}
+                            </select>
+                            <div class="form-hint">A linked project is offered only to the people of its teams.</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label" for="my-role">Your roles in this team</label>
+                            {% set myDefault = is_granted('ROLE_ADMIN') ? 'Project Manager' : 'Project Lead' %}
+                            <select class="form-select team-select" id="my-role" name="my_role[]" multiple data-create="1">
+                                {% for role in roles %}<option value="{{ role }}"{% if role == myDefault %} selected{% endif %}>{{ role }}</option>{% endfor %}
+                            </select>
+                            <div class="form-hint">You are the lead of the team you create.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button type="submit" class="btn btn-primary">Create Team</button>
+                    {% if teams is not empty %}<a href="{{ path('team_mapping') }}" class="btn btn-link">{{ 'back'|trans }}</a>{% endif %}
+                </div>
+            </form>
+        </div>
+    {% else %}
+        {# the selected team: its name and projects #}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">{{ selected.name }}</h3>
+                <div class="card-actions">
+                    <form method="post" action="{{ path('team_mapping_delete', {'id': selected.id}) }}" class="d-inline team-delete-form" data-name="{{ selected.name }}">
+                        <input type="hidden" name="_token" value="{{ csrf }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Delete Team</button>
+                    </form>
+                </div>
+            </div>
+            <form method="post" action="{{ path('team_mapping_update', {'id': selected.id}) }}">
+                <input type="hidden" name="_token" value="{{ csrf }}">
+                <div class="card-body">
+                    <div class="row align-items-end">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label required" for="team-name">Team name</label>
+                            <input type="text" class="form-control" id="team-name" name="name" maxlength="100" required value="{{ selected.name }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label" for="team-projects">Projects</label>
+                            <select class="form-select team-select" id="team-projects" name="projects[]" multiple>
+                                {% for id, name in projects %}<option value="{{ id }}"{% if id in linked %} selected{% endif %}>{{ name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <button type="submit" class="btn w-100">{{ 'action.save'|trans }}</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        {# who is in the team and what they do #}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">People in {{ selected.name }}</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Person</th>
+                        <th>Role in the system</th>
+                        <th style="min-width: 280px">Role in this team</th>
+                        <th class="text-center">Team lead</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for member in members %}
+                        {% set person = member.user %}
+                        {% set formId = 'member-' ~ person.id %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    {{ widgets.user_avatar(person, false, 'avatar-rounded avatar-sm') }}
+                                    <span class="fw-bold">{{ person.displayName }}</span>
+                                    {% if person.id == app.user.id %}<span class="text-secondary">(you)</span>{% endif %}
+                                </div>
+                            </td>
+                            <td class="text-secondary">{{ widgets.user_role_name(person) }}</td>
+                            <td>
+                                {# one or several roles; a role that is not in the list can be typed in #}
+                                {% set mine = member.teamRoles %}
+                                <select class="form-select team-select" name="role[]" form="{{ formId }}" multiple data-create="1" data-placeholder="Choose or type roles">
+                                    {% for role in mine|filter(r => r not in roles) %}<option value="{{ role }}" selected>{{ role }}</option>{% endfor %}
+                                    {% for role in roles %}<option value="{{ role }}"{% if role in mine %} selected{% endif %}>{{ role }}</option>{% endfor %}
+                                </select>
+                            </td>
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input" name="lead" value="1" form="{{ formId }}"{% if member.teamlead %} checked{% endif %}>
+                            </td>
+                            <td class="text-nowrap">
+                                <form method="post" id="{{ formId }}" action="{{ path('team_mapping_member', {'id': selected.id}) }}" class="d-inline">
+                                    <input type="hidden" name="_token" value="{{ csrf }}">
+                                    <input type="hidden" name="user" value="{{ person.id }}">
+                                    <button type="submit" class="btn btn-sm">{{ 'action.save'|trans }}</button>
+                                </form>
+                                <form method="post" action="{{ path('team_mapping_member_remove', {'id': selected.id, 'user': person.id}) }}" class="d-inline member-remove-form" data-name="{{ person.displayName }}">
+                                    <input type="hidden" name="_token" value="{{ csrf }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    {# add somebody #}
+                    {% set inTeam = members|map(m => m.user.id) %}
+                    <tr class="bg-light-subtle">
+                        <td colspan="2">
+                            <select class="form-select team-select" name="user" form="member-new" required>
+                                <option value="">Add a person …</option>
+                                {% for person in people|filter(p => p.id not in inTeam) %}
+                                    <option value="{{ person.id }}">{{ person.displayName }} · {{ widgets.user_role_name(person) }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td>
+                            <select class="form-select team-select" name="role[]" form="member-new" multiple data-create="1" data-placeholder="Choose or type roles">
+                                {% for role in roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
+                            </select>
+                        </td>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input" name="lead" value="1" form="member-new">
+                        </td>
+                        <td>
+                            <form method="post" id="member-new" action="{{ path('team_mapping_member', {'id': selected.id}) }}">
+                                <input type="hidden" name="_token" value="{{ csrf }}">
+                                <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Add</button>
+                            </form>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-secondary small">
+                "Role in the system" (Employee, Project Lead, Project Manager) is set by the administrator.
+                "Role in this team" is what the person does here: pick one or more from the list, or type a new one and press Enter.
+                Team leads can change this team. Only active people can be added.
+            </div>
+        </div>
+    {% endif %}
+
+    <style>
+        .team-pills .nav-link { border: 1px solid var(--tblr-border-color); margin: .25rem .5rem .25rem 0; }
+        .team-pills .nav-link.active { font-weight: 600; }
+    </style>
+    <script type="text/javascript">
+        document.querySelectorAll('.team-delete-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!window.confirm('Delete the team "' + form.dataset.name + '"? Its people stay in the system; only the team and its links go.')) {
+                    event.preventDefault();
+                }
+            });
+        });
+        document.querySelectorAll('.member-remove-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!window.confirm('Take ' + form.dataset.name + ' out of this team?')) {
+                    event.preventDefault();
+                }
+            });
+        });
+        // searchable dropdowns, like the rest of the app
+        document.addEventListener('kimai.initialized', function (event) {
+            const selects = event.detail.kimai.getPlugin('form-select');
+            document.querySelectorAll('select.team-select').forEach(function (select) {
+                selects.activateSelectPickerByElement(select);
+                // roles: a typed role that is not in the list is added as it is (Enter), instead of picking the closest one
+                if (select.dataset.create !== undefined && select.tomselect) {
+                    select.tomselect.settings.addPrecedence = true;
+                }
+            });
+        });
+    </script>
+{% endblock %}

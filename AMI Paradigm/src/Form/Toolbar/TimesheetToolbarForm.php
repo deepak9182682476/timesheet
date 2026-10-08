@@ -37,22 +37,23 @@ final class TimesheetToolbarForm extends AbstractType
         // $this->addCustomerMultiChoice($builder, $newOptions, true);
         $this->addProjectMultiChoice($builder, $newOptions, true, true);
         $this->addActivityMultiChoice($builder, [], true);
-        $this->addTagInputField($builder);
+        // Tags are hidden for now: remove the comment marks to bring them back
+        // $this->addTagInputField($builder);
         if ($options['include_user']) {
             $this->addUsersChoice($builder);
             $this->addTeamsChoice($builder);
         }
-        // filter by the "Status" custom field of the entries
-        $builder->add('workStatus', ChoiceType::class, [
-            'label' => 'Status',
-            'translation_domain' => false,
-            'required' => false,
-            'placeholder' => 'All',
-            'choices' => [
-                TimesheetStatusSubscriber::IN_PROGRESS => TimesheetStatusSubscriber::IN_PROGRESS,
-                TimesheetStatusSubscriber::COMPLETED => TimesheetStatusSubscriber::COMPLETED,
-            ],
-        ]);
+        // The "Status" filter is switched off together with the Status field (see TimesheetStatusSubscriber)
+        // $builder->add('workStatus', ChoiceType::class, [
+        //     'label' => 'Status',
+        //     'translation_domain' => false,
+        //     'required' => false,
+        //     'placeholder' => 'All',
+        //     'choices' => [
+        //         TimesheetStatusSubscriber::IN_PROGRESS => TimesheetStatusSubscriber::IN_PROGRESS,
+        //         TimesheetStatusSubscriber::COMPLETED => TimesheetStatusSubscriber::COMPLETED,
+        //     ],
+        // ]);
         $this->addTimesheetStateChoice($builder);
         // Billable filter is switched off
         // $this->addBillableChoice($builder);

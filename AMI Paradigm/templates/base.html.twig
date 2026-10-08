@@ -27,6 +27,7 @@
 
 {% block page_content_start %}
     {% include 'partials/timesheet-cascade.html.twig' %}
+    {% include 'partials/work-item-cascade.html.twig' %}
     {% include 'partials/dropdown-search.html.twig' %}
     {% include 'partials/leave-day-guard.html.twig' %}
     {# Hours box for durations (see duration_widget in form/blocks.html.twig): keeps the hidden duration field and the visible hours box in step. Registered once for the whole page, so it also covers forms opened in a pop-up. #}

@@ -33,7 +33,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('create_export')]
 final class ExportController extends AbstractController
 {
-    public function __construct(private readonly ServiceExport $export)
+    public function __construct(private readonly ServiceExport $export, private readonly \App\WorkModel\WorkModelService $workModels)
     {
     }
 
@@ -119,6 +119,11 @@ final class ExportController extends AbstractController
             'preview_limit' => $maxItemsPreview,
             'preview_show' => $showPreview,
             'show_rates' => $showRates,
+            // which kind of work the found entries belong to: decides the columns of the preview
+            'work' => $this->workModels->describeExport($entries),
+            // who is mapped to which project: the User box only offers the people of the chosen projects
+            // (the person who is logged in is always offered, they export their own projects)
+            'project_users' => array_map(fn (array $ids) => array_values(array_unique(array_merge($ids, [(int) $this->getUser()->getId()]))), $this->workModels->getMappedUserIds()),
         ]);
     }
 
@@ -165,6 +170,8 @@ final class ExportController extends AbstractController
         }
 
         $entries = $this->getEntries($query);
+        // the columns follow the kind of work that is exported (see WorkModelService::describeExport)
+        \App\WorkModel\ExportContext::set($this->workModels->describeExport($entries));
         $response = $renderer->render($entries, $query);
 
         if ($query->isMarkAsExported()) {
@@ -202,7 +209,34 @@ final class ExportController extends AbstractController
             $query->getEnd()->setTime(23, 59, 59);
         }
 
+        // People who are not admins export their own people only: without a chosen user
+        // the export holds the whole team of the person who is logged in, never everybody.
+        $team = $this->getTeamUsers();
+        if ($team !== null && \count($query->getUsers()) === 0) {
+            foreach ($team as $member) {
+                $query->addUser($member);
+            }
+        }
+
         return $this->export->getExportItems($query);
+    }
+
+    /**
+     * The people whose entries the logged-in person may export: the people who report to them
+     * (directly or further down) and themselves. Admins get null, which means everybody.
+     *
+     * @return array<\App\Entity\User>|null
+     */
+    private function getTeamUsers(): ?array
+    {
+        $user = $this->getUser();
+        if ($user->isAdmin() || $user->isSuperAdmin()) {
+            return null;
+        }
+
+        $team = $this->workModels->getAssignableUsers($user);
+
+        return $team !== [] ? $team : [$user];
     }
 
     /**
@@ -214,6 +248,7 @@ final class ExportController extends AbstractController
             'action' => $this->generateUrl('export', []),
             'include_user' => $this->isGranted('view_other_timesheet'),
             'include_export' => $this->isGranted('edit_export_other_timesheet'),
+            'team_users' => $this->getTeamUsers(),
             'method' => $method,
             'timezone' => $this->getDateTimeFactory()->getTimezone()->getName(),
             'attr' => [

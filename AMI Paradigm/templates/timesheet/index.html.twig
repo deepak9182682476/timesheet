@@ -2,6 +2,20 @@
 {% import "macros/widgets.html.twig" as widgets %}
 {% import "macros/datatables.html.twig" as tables %}
 
+{# The kind of work to show: all of it, or one model with its own columns (see TimesheetAbstractController::index) #}
+{% block main %}
+    {% if listViews is defined and listViews is not empty %}
+        <ul class="nav nav-pills mb-3">
+            {% for key, label in listViews %}
+                <li class="nav-item">
+                    <a class="nav-link{{ key == listView ? ' active' : '' }}" href="{{ path(listRoute, {'view': key}) }}">{{ label }}</a>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+    {{ parent() }}
+{% endblock %}
+
 {% block datatable_outer %}
     {% set checkOverlappingDesc = false %}
     {% set checkOverlappingAsc = false %}
@@ -126,6 +140,13 @@
         {{ widgets.label_customer(entry.project.customer) }}
     {% elseif column == 'project' %}
         {{ widgets.label_project(entry.project) }}
+        {# The model under the project name (Agile, Waterfall) is not shown any more: both are simply projects.
+        {% if (listView ?? 'all') == 'all' and projectModels is defined %}
+            {% set modelLabels = {'agile': 'Agile', 'waterfall': 'Waterfall', 'presales': 'Pre-sales'} %}
+            {% set entryModel = projectModels[entry.project.id] ?? '' %}
+            {% if modelLabels[entryModel] is defined %}<div class="text-secondary small">{{ modelLabels[entryModel] }}</div>{% endif %}
+        {% endif %}
+        #}
     {% elseif column == 'activity' %}
         {% if entry.activity is not null %}
             {{ widgets.label_activity(entry.activity) }}
@@ -154,6 +175,19 @@
         {% if entry.metaField('phase') is null or entry.metaField('phase').value not in ['Leave & Time Off', 'Bench'] %}
             <span class="badge {{ statusValue == 'Completed' ? 'bg-green-lt' : 'bg-blue-lt' }}">{{ statusValue }}</span>
         {% endif %}
+    {% elseif column == 'mf_wi_l1' and (listView ?? 'all') in ['all', 'project'] %}
+        {# "All": everything picked below the project on one line - Epic > Feature > User Story, Lead > Phase, or just the Phase #}
+        {% set steps = [] %}
+        {% for levelField in ['wi_l1', 'wi_l2', 'wi_l3', 'phase'] %}
+            {% if entry.metaField(levelField) is not null and entry.metaField(levelField).value is not empty %}
+                {% set steps = steps|merge([entry.metaField(levelField).value]) %}
+            {% endif %}
+        {% endfor %}
+        {% for step in steps %}{% if not loop.first %} <span class="text-secondary">&rsaquo;</span> {% endif %}{{ step }}{% endfor %}
+    {% elseif column == 'mf_task' %}
+        {# the name of the picked task; an assigned task (Tasks page) is saved by its number #}
+        {% set taskValue = entry.metaField('task') is not null ? entry.metaField('task').value : null %}
+        {% if taskValue is not empty %}{{ taskValue matches '/^\\d+$/' ? 'Task #' ~ taskValue : taskValue }}{% endif %}
     {% elseif column starts with 'mf_' %}
             {{ widgets.meta_field_value(entry, data) }}
     {% endif %}

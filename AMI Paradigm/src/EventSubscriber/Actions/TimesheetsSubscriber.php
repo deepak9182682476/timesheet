@@ -30,8 +30,11 @@ final class TimesheetsSubscriber extends AbstractActionsSubscriber
     {
         if ($this->isGranted('create_own_timesheet')) {
             $event->addCreate($this->path('timesheet_create'));
-            // many entries at once from an Excel file
-            $event->addAction('bulk-upload', ['title' => 'Bulk upload', 'translation_domain' => false, 'url' => $this->path('timesheet_bulk_upload'), 'icon' => 'fas fa-file-upload']);
+            // Bulk upload is hidden on "My timesheets" for everybody for now: remove the comment marks to bring it back
+            // (it was shown to leads, managers and admins only)
+            // if ($this->isGranted('ROLE_TEAMLEAD')) {
+            //     $event->addAction('bulk-upload', ['title' => 'Bulk upload', 'translation_domain' => false, 'url' => $this->path('timesheet_bulk_upload'), 'icon' => 'fas fa-file-upload']);
+            // }
         }
 
         if ($this->isGranted('export_own_timesheet')) {

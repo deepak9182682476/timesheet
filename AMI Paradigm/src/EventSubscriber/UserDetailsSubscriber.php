@@ -53,12 +53,13 @@ class UserDetailsSubscriber implements EventSubscriberInterface
         if ($this->auth->isGranted('password', $user)) {
             $event->addLink(new MenuItemModel('password', 'profile.password', 'user_profile_password', ['username' => $user->getUserIdentifier()]));
         }
-        if ($this->auth->isGranted('2fa', $user)) {
-            $event->addLink(new MenuItemModel('2fa', 'profile.2fa', 'user_profile_2fa', ['username' => $user->getUserIdentifier()]));
-        }
-        if ($this->auth->isGranted('api-token', $user)) {
-            $event->addLink(new MenuItemModel('api-token', 'profile.api-token', 'user_profile_api_token', ['username' => $user->getUserIdentifier()]));
-        }
+        // Two-Factor (2FA) and API Access are hidden for now: remove the comment marks to bring them back
+        // if ($this->auth->isGranted('2fa', $user)) {
+        //     $event->addLink(new MenuItemModel('2fa', 'profile.2fa', 'user_profile_2fa', ['username' => $user->getUserIdentifier()]));
+        // }
+        // if ($this->auth->isGranted('api-token', $user)) {
+        //     $event->addLink(new MenuItemModel('api-token', 'profile.api-token', 'user_profile_api_token', ['username' => $user->getUserIdentifier()]));
+        // }
         if ($this->auth->isGranted('preferences', $user)) {
             $event->addLink(new MenuItemModel('user_profile_preferences', 'profile.preferences', 'user_profile_preferences', ['username' => $user->getUserIdentifier()]));
         }

@@ -1,0 +1,28 @@
+{% extends 'base.html.twig' %}
+
+{# Disable a user: a reason is required, and the person is taken off all projects they are mapped to #}
+{% block main %}
+    {% set formOptions = {
+        'title': 'Disable ' ~ person.displayName,
+        'form': form,
+        'back': path('admin_user')
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% block form_body %}
+            <p>
+                <strong>{{ person.displayName }}</strong> ({{ person.userIdentifier }}) will not be able to log in any more.
+                Their time entries stay as they are.
+            </p>
+            {% if mapped is not empty %}
+                <div class="alert alert-warning">
+                    <div>The person is taken off every project they are mapped to: <strong>{{ mapped|join(', ') }}</strong>.</div>
+                </div>
+            {% else %}
+                <p class="text-muted">The person is not mapped to any project.</p>
+            {% endif %}
+            {{ form_row(form.reason) }}
+            {{ form_rest(form) }}
+        {% endblock %}
+        {% block submit_button %}<button type="submit" class="btn btn-danger">Disable</button>{% endblock %}
+    {% endembed %}
+{% endblock %}

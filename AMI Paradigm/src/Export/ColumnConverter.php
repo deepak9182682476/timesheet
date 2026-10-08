@@ -111,6 +111,8 @@ final class ColumnConverter
             if ($metaField->getName() !== null) {
                 $timesheetMeta['timesheet.meta.' . $metaField->getName()] = (new Column('timesheet.meta.' . $metaField->getName(), $this->getFormatter('default')))
                     ->withHeader($metaField->getLabel())
+                    // wide enough for the names of epics, features, tasks and so on
+                    ->withColumnWidth(ColumnWidth::MEDIUM)
                     ->withExtractor(function (ExportableItem $exportableItem) use ($metaField) {
                         return $exportableItem->getMetaField($metaField->getName())?->getValue();
                     });
@@ -176,11 +178,11 @@ final class ColumnConverter
             } elseif ($column === 'end') {
                 $columns[$column] = (new Column('end', $this->getFormatter('time')))->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getEnd())->withColumnWidth(ColumnWidth::SMALL);
             } elseif ($column === 'duration') {
-                $columns[$column] = (new Column('duration', $this->getFormatter('duration')))->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getDuration())->withColumnWidth(ColumnWidth::SMALL);
+                $columns[$column] = (new Column('duration', $this->getFormatter('duration')))->withHeader('Hours')->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getDuration())->withColumnWidth(ColumnWidth::SMALL);
             } elseif ($column === 'duration_decimal') {
-                $columns[$column] = (new Column('duration', $this->getFormatter('duration_decimal')))->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getDuration())->withColumnWidth(ColumnWidth::SMALL);
+                $columns[$column] = (new Column('duration', $this->getFormatter('duration_decimal')))->withHeader('Hours')->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getDuration())->withColumnWidth(ColumnWidth::SMALL);
             } elseif ($column === 'duration_seconds') {
-                $columns[$column] = (new Column('duration', $this->getFormatter('duration_seconds')))->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getDuration())->withColumnWidth(ColumnWidth::SMALL);
+                $columns[$column] = (new Column('duration', $this->getFormatter('duration_seconds')))->withHeader('Hours')->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getDuration())->withColumnWidth(ColumnWidth::SMALL);
             } elseif ($column === 'break') {
                 // TODO remove method_exists with 3.0
                 $columns[$column] = (new Column('break', $this->getFormatter('duration')))->withExtractor(fn (ExportableItem $exportableItem) => method_exists($exportableItem, 'getBreak') ? $exportableItem->getBreak() : 0)->withColumnWidth(ColumnWidth::SMALL);
@@ -201,7 +203,7 @@ final class ColumnConverter
             } elseif ($column === 'fixed_rate' && $showRates) {
                 $columns[$column] = (new Column('fixedRate', new RateFormatter()))->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getFixedRate());
             } elseif ($column === 'user.alias') {
-                $columns[$column] = (new Column('alias', $this->getFormatter('default')))->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getUser()?->getDisplayName())->withColumnWidth(ColumnWidth::MEDIUM);
+                $columns[$column] = (new Column('alias', $this->getFormatter('default')))->withHeader('Employee')->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getUser()?->getDisplayName())->withColumnWidth(ColumnWidth::MEDIUM);
             } elseif ($column === 'user.name') {
                 $columns[$column] = (new Column('username', $this->getFormatter('default')))->withExtractor(fn (ExportableItem $exportableItem) => $exportableItem->getUser()?->getUserIdentifier())->withColumnWidth(ColumnWidth::MEDIUM);
             } elseif ($column === 'user.email') {

@@ -187,6 +187,8 @@
         document.addEventListener('submit', function (event) {
             var form = event.target;
             if (!form.querySelector) { return; }
+            // a project with a model (Agile, Waterfall, Pre-sales) has no phase to pick here: see work-item-cascade.html.twig
+            if (form.dataset.wiMode === 'model') { return; }
             var phase = form.querySelector('select[data-name="phase"]');
             if (phase === null || phase.value !== '' || !(parseInt(phase.dataset.offered || '0', 10) > 0)) { return; }
             event.preventDefault();

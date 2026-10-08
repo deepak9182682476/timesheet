@@ -83,11 +83,13 @@ final class UserVoter extends Voter
         }
 
         if ($attribute === 'delete') {
-            if ($subject->getId() === $user->getId()) {
-                return false;
-            }
-
-            return $this->permissionManager->hasRolePermission($user, 'delete_user');
+            // Users are never deleted, only disabled (see UserStatusController): nobody may delete a user.
+            // The earlier rule, to bring deleting back:
+            // if ($subject->getId() === $user->getId()) {
+            //     return false;
+            // }
+            // return $this->permissionManager->hasRolePermission($user, 'delete_user');
+            return false;
         }
 
         if ($attribute === 'password') {

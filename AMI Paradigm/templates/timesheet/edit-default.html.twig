@@ -62,12 +62,33 @@
             {% if form.break is defined %}
                 {{ form_row(form.break, {'row_attr': {'class': 'mb-3 ' ~ form.vars.name ~ '_row_' ~ form.break.vars.name}}) }}
             {% endif %}
+            {#
+                Type: Project, Non-project activities or Pre-sales. It decides which projects are offered and what is
+                picked below the project. The script in partials/work-item-cascade.html.twig does the work.
+            #}
+            {% set workItems = (form.project is defined and form.metaFields is defined and form.metaFields.work_item is defined) ? work_item_form_data(form.vars.data, form.user is defined or form.users is defined) : null %}
+            {% if workItems is not null %}
+                <div class="mb-3 row {{ form.vars.name }}_row_type">
+                    <label class="col-form-label col-sm-2 required" for="{{ form.vars.name }}_wi_type">Type</label>
+                    <div class="col-sm-10">
+                        <select class="form-select wi-type" id="{{ form.vars.name }}_wi_type">
+                            <option value="project">Project</option>
+                            <option value="nonproject">Non-Project Activities</option>
+                            <option value="presales">Pre-Sales</option>
+                        </select>
+                    </div>
+                </div>
+            {% endif %}
             {# customer: hidden - the project list shows every project the person is mapped to, grouped by customer #}
             {% if form.customer is defined %}
                 {{ form_row(form.customer, {'row_attr': {'class': 'd-none ' ~ form.vars.name ~ '_row_' ~ form.customer.vars.name}}) }}
             {% endif %}
             {% if form.project is defined %}
                 {{ form_row(form.project, {'row_attr': {'class': 'mb-3 ' ~ form.vars.name ~ '_row_' ~ form.project.vars.name}}) }}
+            {% endif %}
+            {# The levels of the project's model (Epic > Feature > User Story > Activity > Task and the like) are built in here #}
+            {% if workItems is not null %}
+                <div class="wi-levels" data-work-items="{{ workItems|json_encode|e('html_attr') }}"></div>
             {% endif %}
             {# Phase (custom field): picked after the project; it narrows the activities. See partials/timesheet-cascade.html.twig #}
             {% if form.metaFields is defined and form.metaFields.phase is defined %}
@@ -90,6 +111,7 @@
             {% if form.description is defined %}
                 {{ form_row(form.description, {'row_attr': {'class': 'mb-3 ' ~ form.vars.name ~ '_row_' ~ form.description.vars.name}}) }}
             {% endif %}
+            {# Tags are hidden for now: the field is switched off in TimesheetEditForm.php, so this is skipped #}
             {% if form.tags is defined %}
                 {{ form_row(form.tags, {'row_attr': {'class': 'mb-3 ' ~ form.vars.name ~ '_row_' ~ form.tags.vars.name}}) }}
             {% endif %}

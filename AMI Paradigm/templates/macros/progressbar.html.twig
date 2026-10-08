@@ -46,11 +46,13 @@
         <div class="progress">
             <div class="progress-bar {{ progressbar_color(percentReached, reverseColors) }}" role="progressbar" aria-valuenow="{{ width }}" aria-valuemin="0" aria-valuemax="100" style="width: {{ width }}%"></div>
         </div>
+        {# The line under the bar ("0.0% used (9:00 are still open this month)") is hidden for now: remove the comment marks to show it again
         {% if open is not null and open > 0 %}
             <small>{{ transPercentOpen|trans({'%percent%': percentReached|number_format(percentDecimals), '%left%': openFormatted}) }}</small>
         {% else %}
             <small>{{ transPercentSpent|trans({'%percent%': percentReached|number_format(percentDecimals)}) }}</small>
         {% endif %}
+        #}
     </div>
 {% endmacro %}
 

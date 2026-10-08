@@ -21,9 +21,10 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
  * Bulk upload of time entries from an Excel file (see BulkUploadService for the rules).
+ * For leads, managers and admins only: an employee gets "access denied", also when opening the address directly.
  */
 #[Route(path: '/timesheet/bulk-upload')]
-#[IsGranted('IS_AUTHENTICATED_REMEMBERED')]
+#[IsGranted('ROLE_TEAMLEAD')]
 final class BulkUploadController extends AbstractController
 {
     public function __construct(private readonly BulkUploadService $bulkUpload)
@@ -63,7 +64,7 @@ final class BulkUploadController extends AbstractController
         unset($people[(int) $user->getId()]);
 
         return $this->render('bulk-upload/index.html.twig', [
-            'page_setup' => new PageSetup('Bulk upload'),
+            'page_setup' => new PageSetup('Bulk Upload'),
             'result' => $result,
             'file_name' => $fileName,
             'headers' => BulkUploadService::HEADERS,

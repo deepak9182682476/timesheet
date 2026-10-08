@@ -17,12 +17,10 @@
             document.getElementById('{{ chart_id }}').getContext('2d'), {
                 type: '{{ type }}',
                 data: {
-                    {# events (team outing, leave ...) of the logged-in person are added under the day, one short line per event #}
-                    {% set dayEvents = data is empty ? {} : team_events_by_day((data|first).day, (data|last).day) %}
+                    {# only the date and the weekday are shown under each bar; events and leave are not listed here #}
                     labels: [
                         {% for day in data -%}
-                        {% set eventTitles = dayEvents[day.day|date_format('Y-m-d')] ?? [] %}
-                        ['{{ day.day|date_format('d-M-y') }}', '{{ day.day|date_format('l') }}'{% for eventTitle in eventTitles|slice(0, 3) %}, '\u2605 {{ eventTitle|u.truncate(16, '…')|e('js') }}'{% endfor %}{% if eventTitles|length > 3 %}, '+{{ eventTitles|length - 3 }} more'{% endif %}]
+                        ['{{ day.day|date_format('d-M-y') }}', '{{ day.day|date_format('D') }}']
                         {% if not loop.last %},{% endif -%}
                         {%- endfor %}
                     ],
@@ -134,7 +132,8 @@
                                 footer: function(tooltipItems) {
                                     const tooltipItem = tooltipItems[0];
                                     const tooltipData = tooltipItem.dataset.realData[tooltipItem.dataIndex];
-                                    return '{{ 'stats.durationTotal'|trans }}: ' + tooltipData.total + '\n{{ 'billable'|trans }}: ' + tooltipData.billable;
+                                    // Billable is hidden for now; it was: + '\n{{ 'billable'|trans }}: ' + tooltipData.billable
+                                    return '{{ 'stats.durationTotal'|trans }}: ' + tooltipData.total;
                                 },
                                 beforeFooter: function(tooltipItems) {
                                     return ' ';

@@ -98,7 +98,8 @@ final class ActivityController extends AbstractController
             $table->addColumn('timeBudget', ['class' => 'd-none text-end w-min', 'title' => 'timeBudget']);
         }
 
-        $table->addColumn('billable', ['class' => 'd-none text-center w-min', 'orderBy' => false]);
+        // Billable is hidden for now: remove the comment marks to bring it back
+        // $table->addColumn('billable', ['class' => 'd-none text-center w-min', 'orderBy' => false]);
         $table->addColumn('team', ['class' => 'text-center w-min', 'orderBy' => false]);
         $table->addColumn('visible', ['class' => 'd-none text-center w-min']);
         $table->addColumn('actions', ['class' => 'actions']);

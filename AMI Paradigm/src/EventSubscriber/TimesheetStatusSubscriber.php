@@ -28,6 +28,12 @@ final class TimesheetStatusSubscriber implements EventSubscriberInterface
     public const IN_PROGRESS = 'In progress';
     public const COMPLETED = 'Completed';
 
+    /**
+     * Status is switched off: it is not asked for in the entry form and not shown in lists or exports.
+     * Set this to true to bring it back; the statuses saved earlier are still in the database.
+     */
+    private const ENABLED = false;
+
     public static function getSubscribedEvents(): array
     {
         return [
@@ -39,11 +45,19 @@ final class TimesheetStatusSubscriber implements EventSubscriberInterface
 
     public function addToForm(TimesheetMetaDefinitionEvent $event): void
     {
+        if (!self::ENABLED) {
+            return;
+        }
+
         $event->getEntity()->setMetaField($this->definition());
     }
 
     public function addToLists(TimesheetMetaDisplayEvent $event): void
     {
+        if (!self::ENABLED) {
+            return;
+        }
+
         $event->addField($this->definition());
     }
 

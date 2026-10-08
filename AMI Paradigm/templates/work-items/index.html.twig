@@ -1,0 +1,352 @@
+{% extends 'base.html.twig' %}
+
+{#
+    Project mapping: managers and leads build what their people book time on, below a project,
+    and assign each item to people. The levels follow the model of the project (see WorkModelService).
+
+    A project can hold thousands of items, so the table starts with the top level only. An item is opened
+    with its arrow (the level below is then loaded), found with the search box, or found by the person it is
+    assigned to. Ticked items can be given to people in one go; whole projects are filled from an Excel file.
+#}
+{% block main %}
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">Project Mapping</h3>
+            {% if project is not null %}
+                <div class="card-actions btn-list">
+                    <a href="{{ path('work_items_upload', {'project': project.id}) }}" class="btn"><i class="fas fa-file-upload me-2"></i>Bulk Upload (Excel)</a>
+                    {# hidden: the same file is offered as "Current mapping" inside "Bulk upload (Excel)"
+                    <a href="{{ path('work_items_template', {'project': project.id, 'data': 1}) }}" class="btn"><i class="fas fa-download me-2"></i>Download as Excel</a>
+                    #}
+                    <a href="{{ path('work_items_create', {'project': project.id}) }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Add {{ levels[0] }}</a>
+                </div>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if projects is empty %}
+                <div class="text-secondary">There is no project you can map yet. An administrator creates the projects.</div>
+            {% else %}
+                <div class="row g-3 align-items-end">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label" for="work-item-project">{{ 'project'|trans }}</label>
+                        <select id="work-item-project" class="form-select">
+                            {% for candidate in projects %}
+                                <option value="{{ candidate.id }}"{% if project is not null and candidate.id == project.id %} selected{% endif %}>{{ candidate.name }} ({{ project_model_name(candidate) }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% if project is not null %}
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" for="work-item-search">Find by name</label>
+                            <input type="search" id="work-item-search" class="form-control" placeholder="Part of the name of any {{ levels|join(', ') }}" autocomplete="off">
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label" for="work-item-person">Assigned to</label>
+                            <select id="work-item-person" class="form-select">
+                                <option value="">Anybody</option>
+                                {% for person in people %}
+                                    <option value="{{ person.id }}">{{ person.displayName }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <a href="#" id="work-item-reset" class="btn btn-link d-none">Show all</a>
+                        </div>
+                    {% endif %}
+                </div>
+                {% if project is not null %}
+                    <div class="text-secondary mt-3">
+                        People pick <strong>{{ levels|join(' > ') }}</strong> on a time entry for this project, and only see what is assigned to them.
+                        An item without people of its own is for the same people as the item above it, so assigning an {{ levels[0] }} covers everything below it.
+                        {{ levels|last }} is optional on a time entry.
+                    </div>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    {% if project is not null %}
+        <form method="post" action="{{ path('work_items_assign') }}" id="work-item-assign">
+            <input type="hidden" name="_token" value="{{ csrf_token('work_item_assign') }}">
+            <input type="hidden" name="project" value="{{ project.id }}">
+            <div id="work-item-ids"></div>
+
+            {# shown while items are ticked #}
+            <div class="card mb-3 d-none border-primary" id="work-item-bar">
+                <div class="card-body">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-12 col-md-auto fw-bold pb-2"><span id="work-item-count">0</span> selected</div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label" for="work-item-mode">What to do</label>
+                            <select name="mode" id="work-item-mode" class="form-select">
+                                <option value="add">Also assign to</option>
+                                <option value="replace">Assign only to</option>
+                                <option value="remove">Take off</option>
+                                <option value="clear">Take everybody off</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-5" id="work-item-people-box">
+                            <label class="form-label" for="work-item-people">People</label>
+                            <select name="users[]" id="work-item-people" class="selectpicker form-select" data-width="100%" multiple="multiple">
+                                {% for person in people %}
+                                    <option value="{{ person.id }}">{{ person.displayName }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary">Apply</button>
+                            <a href="#" id="work-item-unselect" class="btn btn-link">Clear selection</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+
+        <div class="card mb-3">
+            {% if rows is empty %}
+                <div class="card-body text-secondary">
+                    Nothing is mapped for this project yet. Start with "Add {{ levels[0] }}", or fill the whole project from an Excel file with "Bulk upload (Excel)".
+                </div>
+            {% else %}
+                <div class="card-header py-2">
+                    <div class="text-secondary small" id="work-item-info">{{ total }} {{ total == 1 ? 'item' : 'items' }} in this project. Open an item with its arrow to see what is below it.</div>
+                    <div class="card-actions btn-list">
+                        <a href="#" id="work-item-collapse" class="btn btn-sm">Collapse All</a>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-vcenter card-table" id="work-item-table"
+                           data-project="{{ project.id }}"
+                           data-children-url="{{ path('work_items_children') }}"
+                           data-search-url="{{ path('work_items_search') }}">
+                        <thead>
+                        <tr>
+                            <th class="w-1 pe-0"><input type="checkbox" class="form-check-input" id="work-item-check-all" aria-label="Select all shown"></th>
+                            <th>{{ levels|join(' > ') }}</th>
+                            <th>Assigned to</th>
+                            <th class="w-1"></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% include 'work-items/_rows.html.twig' with {'flat': false, 'more': false} %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <script type="text/javascript">
+        (function () {
+            // another project: show its mapping
+            var picker = document.getElementById('work-item-project');
+            if (picker !== null) {
+                picker.addEventListener('change', function () {
+                    window.location.href = '{{ path('work_items') }}?project=' + encodeURIComponent(picker.value);
+                });
+            }
+
+            var table = document.getElementById('work-item-table');
+            if (table === null) { return; }
+            var body = table.querySelector('tbody');
+            var project = table.dataset.project;
+            var search = document.getElementById('work-item-search');
+            var person = document.getElementById('work-item-person');
+            var reset = document.getElementById('work-item-reset');
+            var info = document.getElementById('work-item-info');
+            var infoText = info.textContent;
+
+            // ---- which items are open is remembered while the browser tab stays open, so the page comes back
+            //      the way it was left after adding or editing something
+            var storeKey = 'work-items-open-' + project;
+            function opened() {
+                try { return JSON.parse(window.sessionStorage.getItem(storeKey) || '[]'); } catch (e) { return []; }
+            }
+            function remember(id, open) {
+                var ids = opened().filter(function (other) { return other !== id; });
+                if (open) { ids.push(id); }
+                try { window.sessionStorage.setItem(storeKey, JSON.stringify(ids)); } catch (e) { /* the page works without it */ }
+            }
+
+            function rowsFrom(html) {
+                var holder = document.createElement('tbody');
+                holder.innerHTML = html;
+                return Array.prototype.slice.call(holder.children);
+            }
+
+            function load(url) {
+                return fetch(url, {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}}).then(function (response) {
+                    if (!response.ok) { throw new Error('HTTP ' + response.status); }
+                    return response.text();
+                });
+            }
+
+            function arrow(tr, open) {
+                var toggle = tr.querySelector('.wi-toggle');
+                if (toggle === null) { return; }
+                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                toggle.querySelector('i').className = 'fas fa-fw ' + (open ? 'fa-chevron-down' : 'fa-chevron-right');
+            }
+
+            function close(tr) {
+                var level = parseInt(tr.dataset.level, 10);
+                var next = tr.nextElementSibling;
+                while (next !== null && next.classList.contains('wi-row') && parseInt(next.dataset.level, 10) > level) {
+                    var gone = next;
+                    next = next.nextElementSibling;
+                    remember(gone.dataset.id, false);
+                    gone.remove();
+                }
+                tr.dataset.open = '';
+                arrow(tr, false);
+                remember(tr.dataset.id, false);
+            }
+
+            function open(tr) {
+                if (tr.dataset.open === '1' || tr.dataset.loading === '1') { return Promise.resolve(); }
+                tr.dataset.loading = '1';
+                return load(table.dataset.childrenUrl + '?parent=' + encodeURIComponent(tr.dataset.id)).then(function (html) {
+                    var anchor = tr;
+                    var wanted = opened();
+                    var again = [];
+                    rowsFrom(html).forEach(function (child) {
+                        anchor.parentNode.insertBefore(child, anchor.nextSibling);
+                        anchor = child;
+                        if (child.dataset && wanted.indexOf(child.dataset.id) !== -1) { again.push(child); }
+                    });
+                    tr.dataset.open = '1';
+                    tr.dataset.loading = '';
+                    arrow(tr, true);
+                    remember(tr.dataset.id, true);
+                    // what was open below it last time opens again
+                    return Promise.all(again.map(open));
+                }).catch(function () {
+                    tr.dataset.loading = '';
+                });
+            }
+
+            body.addEventListener('click', function (event) {
+                var toggle = event.target.closest('.wi-toggle');
+                if (toggle !== null) {
+                    event.preventDefault();
+                    var tr = toggle.closest('tr');
+                    if (tr.dataset.open === '1') { close(tr); } else { open(tr); }
+                    return;
+                }
+                // adding something below an item: the item is open when the page comes back
+                var add = event.target.closest('.wi-add');
+                if (add !== null) { remember(add.closest('tr').dataset.id, true); }
+            });
+
+            document.getElementById('work-item-collapse').addEventListener('click', function (event) {
+                event.preventDefault();
+                try { window.sessionStorage.removeItem(storeKey); } catch (e) { /* nothing to forget */ }
+                if (searching()) { return; }
+                Array.prototype.slice.call(body.querySelectorAll('tr.wi-row')).forEach(function (tr) {
+                    if (tr.dataset.level === '0') { tr.dataset.open = ''; arrow(tr, false); } else { tr.remove(); }
+                });
+            });
+
+            // ---- search by name and by person: a flat list of what matches, each with the path above it
+            function searching() {
+                return search.value.trim() !== '' || person.value !== '';
+            }
+
+            var timer = null;
+            var ticket = 0;
+            function show() {
+                var mine = ++ticket;
+                var url = searching()
+                    ? table.dataset.searchUrl + '?project=' + encodeURIComponent(project) + '&q=' + encodeURIComponent(search.value.trim()) + '&user=' + encodeURIComponent(person.value)
+                    : table.dataset.childrenUrl + '?project=' + encodeURIComponent(project);
+                reset.classList.toggle('d-none', !searching());
+                load(url).then(function (html) {
+                    if (mine !== ticket) { return; }
+                    body.innerHTML = html;
+                    info.textContent = searching() ? 'Items that match. The line above each name shows where it sits.' : infoText;
+                    selection();
+                    if (!searching()) { restore(); }
+                });
+            }
+            search.addEventListener('input', function () {
+                window.clearTimeout(timer);
+                timer = window.setTimeout(show, 300);
+            });
+            search.addEventListener('keydown', function (event) { if (event.key === 'Enter') { event.preventDefault(); } });
+            person.addEventListener('change', show);
+            reset.addEventListener('click', function (event) {
+                event.preventDefault();
+                search.value = '';
+                person.value = '';
+                show();
+            });
+
+            function restore() {
+                var wanted = opened();
+                Array.prototype.slice.call(body.querySelectorAll('tr.wi-row')).forEach(function (tr) {
+                    if (wanted.indexOf(tr.dataset.id) !== -1) { open(tr); }
+                });
+            }
+
+            // ---- ticked items and the bar to assign them
+            var bar = document.getElementById('work-item-bar');
+            var count = document.getElementById('work-item-count');
+            var ids = document.getElementById('work-item-ids');
+            var all = document.getElementById('work-item-check-all');
+            var mode = document.getElementById('work-item-mode');
+            var peopleBox = document.getElementById('work-item-people-box');
+
+            function ticked() {
+                return Array.prototype.slice.call(body.querySelectorAll('.wi-check:checked'));
+            }
+            function selection() {
+                var boxes = ticked();
+                count.textContent = boxes.length;
+                bar.classList.toggle('d-none', boxes.length === 0);
+                ids.innerHTML = '';
+                boxes.forEach(function (box) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'items[]';
+                    input.value = box.value;
+                    ids.appendChild(input);
+                });
+                if (boxes.length === 0) { all.checked = false; }
+            }
+            body.addEventListener('change', function (event) {
+                if (event.target.classList.contains('wi-check')) { selection(); }
+            });
+            all.addEventListener('change', function () {
+                Array.prototype.slice.call(body.querySelectorAll('.wi-check')).forEach(function (box) { box.checked = all.checked; });
+                selection();
+            });
+            document.getElementById('work-item-unselect').addEventListener('click', function (event) {
+                event.preventDefault();
+                Array.prototype.slice.call(body.querySelectorAll('.wi-check')).forEach(function (box) { box.checked = false; });
+                selection();
+            });
+            mode.addEventListener('change', function () {
+                peopleBox.classList.toggle('d-none', mode.value === 'clear');
+            });
+            document.getElementById('work-item-assign').addEventListener('submit', function (event) {
+                var picked = document.getElementById('work-item-people').selectedOptions.length;
+                if (mode.value !== 'clear' && picked === 0) {
+                    event.preventDefault();
+                    window.alert('Please pick the people first.');
+                }
+            });
+
+            // ask before deleting (the rows come and go, so the question hangs on the table)
+            body.addEventListener('submit', function (event) {
+                var form = event.target;
+                if (!form.classList.contains('work-item-delete-form')) { return; }
+                var below = form.dataset.children === '1' ? ' Everything below it is deleted as well.' : '';
+                if (!window.confirm('Delete the ' + form.dataset.kind + ' "' + form.dataset.title + '"?' + below + ' Time entries that already use it keep the names.')) {
+                    event.preventDefault();
+                }
+            });
+
+            restore();
+        })();
+    </script>
+{% endblock %}

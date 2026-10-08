@@ -47,6 +47,9 @@ trait EntityFormTrait
                 'label' => 'timeBudget',
                 'icon' => 'clock',
                 'required' => false,
+                // a quota can be left at 0 (none) and can be far more than one day's entry (which stops at 10 hours)
+                'max_hours' => 100000,
+                'attr' => ['data-min-hours' => '0', 'data-max-hours' => '100000'],
             ]);
         }
 
@@ -61,7 +64,8 @@ trait EntityFormTrait
                 'label' => 'visible',
                 'help' => 'help.visible',
             ])
-            ->add('billable', BillableType::class)
+            // Billable is hidden for now: remove the comment marks to bring it back
+            // ->add('billable', BillableType::class)
         ;
     }
 }

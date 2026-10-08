@@ -52,17 +52,18 @@
     <div class="row row-cards">
         <div class="col-md-6">
             <div class="card h-100">
-                <div class="card-header"><h3 class="card-title">1. Download the template</h3></div>
+                <div class="card-header"><h3 class="card-title">1. Download the Template</h3></div>
                 <div class="card-body">
                     <p>The Excel template has the column names, two example rows, and a sheet with the projects, phases, activities and tasks you can use.</p>
                     <p class="text-secondary small mb-3">Columns: {{ headers|join(', ') }}</p>
-                    <a href="{{ path('timesheet_bulk_upload_template') }}" class="btn btn-outline-primary"><i class="fas fa-download me-2"></i>Download template</a>
+                    <p class="text-secondary small mb-3">Bulk upload covers "Non-Project Activities". Time on Agile, Waterfall and Pre-sales projects is entered on the time entry form or in "Weekly hours", where the assigned Epic, Feature, User Story and so on are picked.</p>
+                    <a href="{{ path('timesheet_bulk_upload_template') }}" class="btn btn-outline-primary"><i class="fas fa-download me-2"></i>Download Template</a>
                 </div>
             </div>
         </div>
         <div class="col-md-6">
             <div class="card h-100">
-                <div class="card-header"><h3 class="card-title">2. Upload the filled file</h3></div>
+                <div class="card-header"><h3 class="card-title">2. Upload the Filled File</h3></div>
                 <div class="card-body">
                     <form method="post" action="{{ path('timesheet_bulk_upload') }}" enctype="multipart/form-data">
                         <input type="hidden" name="_token" value="{{ csrf_token('timesheet_bulk_upload') }}">

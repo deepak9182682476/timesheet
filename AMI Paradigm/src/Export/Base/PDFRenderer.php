@@ -113,6 +113,8 @@ class PDFRenderer implements DispositionInlineInterface, ExportRendererInterface
         $content = $this->twig->render($this->getTemplate(), array_merge([
             'entries' => $exportItems,
             'query' => $query,
+            // which columns to show for the kind of work that is exported (see WorkModelService::describeExport)
+            'work' => \App\WorkModel\ExportContext::get(),
             'summaries' => $summary,
             'budgets' => $this->calculateProjectBudget($exportItems, $query, $this->projectStatisticService),
             'decimal' => false,

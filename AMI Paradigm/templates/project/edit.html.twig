@@ -27,6 +27,13 @@
                     {{ form_row(form.number) }}
                 </div>
             </div>
+            {# Status and Execution center (ProjectDetailsSubscriber) get their own place in the rows below #}
+            {% set statusField = null %}
+            {% set centerField = null %}
+            {% for meta in form.metaFields %}
+                {% if meta.vars.data.name == 'project_status' %}{% set statusField = meta.value %}{% endif %}
+                {% if meta.vars.data.name == 'execution_center' %}{% set centerField = meta.value %}{% endif %}
+            {% endfor %}
             <div class="row">
                 <div class="col-md-4">
                     {{ form_row(form.start) }}
@@ -34,11 +41,20 @@
                 <div class="col-md-4">
                     {{ form_row(form.end) }}
                 </div>
+                {# "Times locked until" is hidden for now (see ProjectEditForm.php) #}
+                {% if form.lockedUntil is defined %}
                 <div class="col-md-4">
                     {{ form_row(form.lockedUntil) }}
                 </div>
+                {% endif %}
+                {% if statusField is not null %}
+                <div class="col-md-4">
+                    {{ form_row(statusField) }}
+                </div>
+                {% endif %}
             </div>
-            {% if form.budgetType is defined %}
+            {# the money Budget is hidden for now (see ProjectController.php): hourly quota and Budget-Type are left #}
+            {% if form.budgetType is defined or form.budget is defined or form.timeBudget is defined %}
             <div class="row">
                 {% if form.budget is defined %}
                 <div class="col-md-4">
@@ -50,8 +66,21 @@
                     {{ form_row(form.timeBudget) }}
                 </div>
                 {% endif %}
+                {% if form.budgetType is defined %}
                 <div class="col-md-4">
                     {{ form_row(form.budgetType) }}
+                </div>
+                {% endif %}
+                {% if centerField is not null %}
+                <div class="col-md-4">
+                    {{ form_row(centerField) }}
+                </div>
+                {% endif %}
+            </div>
+            {% elseif centerField is not null %}
+            <div class="row">
+                <div class="col-md-4">
+                    {{ form_row(centerField) }}
                 </div>
             </div>
             {% endif %}
@@ -63,6 +92,7 @@
                 </div>
             {% endif %}
             {{ form_helper.metafields(form, null) }}
+            {# Invoice settings (order number, order date, invoice text) are hidden for now (see ProjectEditForm.php):
             {% embed '@theme/embeds/collapsible.html.twig' with {id: 'project_invoice_settings'} %}
                 {% import "macros/widgets.html.twig" as widgets %}
                 {% import "macros/form_helper.html.twig" as form_helper %}
@@ -82,12 +112,13 @@
                     {{ form_helper.metafields(form, 'invoice') }}
                 {% endblock %}
             {% endembed %}
+            #}
             <div class="row">
                 <div class="col-md-4">
                     {{ form_row(form.visible) }}
                 </div>
                 <div class="col-md-4">
-                    {{ form_row(form.billable) }}
+                    {# Billable is hidden for now (the field is switched off in the form class) #}{% if form.billable is defined %}{{ form_row(form.billable) }}{% endif %}
                 </div>
                 <div class="col-md-4">
                     {{ form_row(form.globalActivities) }}

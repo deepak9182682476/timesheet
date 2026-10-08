@@ -181,7 +181,7 @@ final class QuickEntryWeekType extends AbstractType
             'data_class' => QuickEntryModel::class,
             'timezone' => date_default_timezone_get(),
             'duration_minutes' => null,
-            'duration_hours' => 10,
+            'duration_hours' => DurationType::MAX_ENTRY_HOURS,
             'start_date' => new DateTime(),
             'end_date' => new DateTime(),
             'prototype_data' => null,

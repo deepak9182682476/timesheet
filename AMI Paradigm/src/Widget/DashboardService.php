@@ -23,6 +23,10 @@ final class DashboardService
 {
     public const BOOKMARK_TYPE = 'dashboard';
     public const BOOKMARK_NAME = 'default';
+    /**
+     * Widgets that are switched off for everyone. Tasks is hidden for now: empty this list to bring "My tasks" back.
+     */
+    private const HIDDEN_WIDGETS = ['MyTasks'];
 
     /**
      * @var array<WidgetInterface>|null
@@ -48,6 +52,10 @@ final class DashboardService
         if ($this->widgets === null) {
             $all = [];
             foreach ($this->service->getAllWidgets() as $widget) {
+                if (\in_array($widget->getId(), self::HIDDEN_WIDGETS, true)) {
+                    continue;
+                }
+
                 $widget->setUser($user);
 
                 $permissions = $widget->getPermissions();

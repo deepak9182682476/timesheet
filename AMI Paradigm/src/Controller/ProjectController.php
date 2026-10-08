@@ -89,25 +89,29 @@ final class ProjectController extends AbstractController
         $table->addColumn('customer', ['class' => 'd-none']);
         $table->addColumn('comment', ['class' => 'd-none', 'title' => 'description']);
         $table->addColumn('number', ['class' => 'd-none w-min', 'title' => 'project_number']);
-        $table->addColumn('orderNumber', ['class' => 'd-none']);
-        $table->addColumn('orderDate', ['class' => 'd-none']);
+        // invoice settings are hidden for now: remove the comment marks to bring the columns back
+        // $table->addColumn('orderNumber', ['class' => 'd-none']);
+        // $table->addColumn('orderDate', ['class' => 'd-none']);
         $table->addColumn('project_start', ['class' => 'd-none']);
         $table->addColumn('project_end', ['class' => 'd-none']);
-        $table->addColumn('lockedUntil', ['class' => 'd-none', 'title' => 'project_locked_until']);
+        // "Times locked until" is hidden for now: remove the comment marks to bring the column back
+        // $table->addColumn('lockedUntil', ['class' => 'd-none', 'title' => 'project_locked_until']);
 
         foreach ($metaColumns as $metaColumn) {
             $table->addColumn('mf_' . $metaColumn->getName(), ['title' => $metaColumn->getLabel(), 'class' => 'd-none', 'orderBy' => false, 'data' => $metaColumn]);
         }
 
-        if ($this->isGranted('budget_money', 'project')) {
-            $table->addColumn('budget', ['class' => 'd-none text-end w-min', 'title' => 'budget']);
-        }
+        // the money "Budget" is hidden for now: remove the comment marks to bring the column back
+        // if ($this->isGranted('budget_money', 'project')) {
+        //     $table->addColumn('budget', ['class' => 'd-none text-end w-min', 'title' => 'budget']);
+        // }
 
         if ($this->isGranted('budget_time', 'project')) {
             $table->addColumn('timeBudget', ['class' => 'd-none text-end w-min', 'title' => 'timeBudget']);
         }
 
-        $table->addColumn('billable', ['class' => 'd-none text-center w-min', 'orderBy' => false]);
+        // Billable is hidden for now: remove the comment marks to bring it back
+        // $table->addColumn('billable', ['class' => 'd-none text-center w-min', 'orderBy' => false]);
         $table->addColumn('team', ['class' => 'text-center w-min', 'orderBy' => false]);
         $table->addColumn('visible', ['class' => 'd-none text-center w-min']);
         $table->addColumn('actions', ['class' => 'actions']);
@@ -529,7 +533,9 @@ final class ProjectController extends AbstractController
             'method' => 'POST',
             'currency' => $currency,
             'timezone' => $this->getDateTimeFactory()->getTimezone()->getName(),
-            'include_budget' => $this->isGranted('budget', $project),
+            // The money "Budget" is hidden for projects for now: put back the line below to bring it back
+            // 'include_budget' => $this->isGranted('budget', $project),
+            'include_budget' => false,
             'include_time' => $this->isGranted('time', $project),
         ]);
     }

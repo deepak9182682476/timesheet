@@ -1,0 +1,23 @@
+{% extends 'base.html.twig' %}
+
+{% block main %}
+    {% set formOptions = {
+        'title': 'Enable ' ~ person.displayName,
+        'form': form,
+        'back': path('admin_user')
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% block form_body %}
+            <p><strong>{{ person.displayName }}</strong> ({{ person.userIdentifier }}) will be able to log in again.</p>
+            {% if reason is not empty %}
+                <div class="alert alert-info">
+                    <div>Disabled{% if when %} on {{ when }}{% endif %}{% if by %} by {{ by }}{% endif %}.<br>
+                    Reason: {{ reason }}</div>
+                </div>
+            {% endif %}
+            <p class="text-muted">The project mapping was removed when the person was disabled. Map them again on the "Project mapping" page.</p>
+            {{ form_rest(form) }}
+        {% endblock %}
+        {% block submit_button %}<button type="submit" class="btn btn-primary">Enable</button>{% endblock %}
+    {% endembed %}
+{% endblock %}

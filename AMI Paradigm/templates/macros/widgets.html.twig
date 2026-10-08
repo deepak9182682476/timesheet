@@ -94,6 +94,19 @@
     {{ _self.label_boolean(visible) }}
 {% endmacro %}
 
+{# The highest role of a user, as set on the user: what the team lists show when the pointer is on a person #}
+{% macro user_role_name(user) -%}
+    {%- set roleName = null -%}
+    {%- for role in ['ROLE_SUPER_ADMIN', 'ROLE_ADMIN', 'ROLE_TEAMLEAD'] -%}
+        {%- if roleName is null and role in user.roles -%}{%- set roleName = role -%}{%- endif -%}
+    {%- endfor -%}
+    {%- if roleName is null -%}
+        {%- set others = user.roles|filter(r => r != 'ROLE_USER') -%}
+        {%- set roleName = others is not empty ? others|first : 'ROLE_USER' -%}
+    {%- endif -%}
+    {{- roleName|trans -}}
+{%- endmacro %}
+
 {% macro label_role(role) %}
     {% set color = 'primary' %}
     {% if role == 'ROLE_SUPER_ADMIN' %}
@@ -407,10 +420,12 @@
                 <td class="d-none d-sm-table-cell avatars avatar-list avatar-list-stacked">
                     {% for member in members|sort((a, b) => b.teamlead <=> a.teamlead) %}
                         {% set user = member.user %}
+                        {# the tooltip shows the person's role from the user settings (earlier: "Teamlead: name" for the team's leads) #}
+                        {% set tooltip = user.displayName ~ ' · ' ~ _self.user_role_name(user) ~ (member.teamRole is not empty ? ' · ' ~ member.teamRole : '') %}
                         {% if member.teamlead %}
-                            {{ _self.user_avatar(user, ('teamlead'|trans ~ ': ' ~ user.displayName), (class ~ ' teamlead'), 'info') }}
+                            {{ _self.user_avatar(user, tooltip, (class ~ ' teamlead'), 'info') }}
                         {% else %}
-                            {{ _self.user_avatar(user, null, class) }}
+                            {{ _self.user_avatar(user, tooltip, class) }}
                         {% endif %}
                     {% endfor %}
                 </td>

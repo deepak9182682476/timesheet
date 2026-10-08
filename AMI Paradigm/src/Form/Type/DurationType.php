@@ -37,7 +37,8 @@ final class DurationType extends AbstractType
     public const PARSE_MODE_INTEGER_MINUTES = 'integer_minutes';
 
     /** A time entry cannot be longer than this many hours (the hours box in the form uses the same limit) */
-    public const MAX_ENTRY_HOURS = 10;
+    // the longest one time entry can be, everywhere (was 10)
+    public const MAX_ENTRY_HOURS = 14;
 
     /**
      * Server-side check for the limit above: the hours box in the browser stops at the limit too,

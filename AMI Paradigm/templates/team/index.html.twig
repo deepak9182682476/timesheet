@@ -12,7 +12,9 @@
     {% elseif column == 'avatar' %}
         {% for member in entry.members|sort((a, b) => b.teamlead <=> a.teamlead) %}
             {% set user = member.user %}
-            {% set tooltip = member.teamlead ? ('teamlead'|trans ~ ': ' ~ user.displayName) : null %}
+            {# the tooltip shows the person's role from the user settings; the blue dot still marks who is ticked
+               as team lead of this team (earlier the tooltip said "Teamlead: name" for them only) #}
+            {% set tooltip = user.displayName ~ ' · ' ~ widgets.user_role_name(user) ~ (member.teamRole is not empty ? ' · ' ~ member.teamRole : '') %}
             {{ widgets.user_avatar(user, tooltip, 'avatar-rounded', (member.teamlead ? 'info' : null)) }}
         {% endfor %}
     {% elseif column == 'amount' %}

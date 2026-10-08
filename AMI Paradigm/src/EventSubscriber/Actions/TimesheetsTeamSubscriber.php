@@ -33,8 +33,10 @@ final class TimesheetsTeamSubscriber extends AbstractActionsSubscriber
             $event->addAction('multi-user', ['title' => 'create-timesheet-multiuser', 'url' => $this->path('admin_timesheet_create_multiuser'), 'class' => 'create-ts-mu modal-ajax-form', 'icon' => 'fas fa-user-plus']);
         }
 
-        // many entries at once from an Excel file; superiors can include rows for their people
-        $event->addAction('bulk-upload', ['title' => 'Bulk upload', 'translation_domain' => false, 'url' => $this->path('timesheet_bulk_upload'), 'icon' => 'fas fa-file-upload']);
+        // many entries at once from an Excel file; superiors can include rows for their people (employees do not see it)
+        if ($this->isGranted('ROLE_TEAMLEAD')) {
+            $event->addAction('bulk-upload', ['title' => 'Bulk Upload', 'translation_domain' => false, 'url' => $this->path('timesheet_bulk_upload'), 'icon' => 'fas fa-file-upload']);
+        }
 
         if ($this->isGranted('export_other_timesheet')) {
             foreach ($this->serviceExport->getTimesheetExporter() as $exporter) {

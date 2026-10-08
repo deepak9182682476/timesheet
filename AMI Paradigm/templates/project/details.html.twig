@@ -52,6 +52,7 @@
                             </td>
                         </tr>
                     {% endif %}
+                    {# hidden for now:
                     {% if project.orderNumber is not empty %}
                     <tr>
                         <th>{{ 'orderNumber'|trans }}</th>
@@ -60,6 +61,8 @@
                         </td>
                     </tr>
                     {% endif %}
+                    #}
+                    {# hidden for now:
                     {% if project.orderDate is not empty %}
                     <tr>
                         <th>{{ 'orderDate'|trans }}</th>
@@ -68,6 +71,7 @@
                         </td>
                     </tr>
                     {% endif %}
+                    #}
                     {% if project.start is not empty %}
                     <tr>
                         <th>{{ 'project_start'|trans }}</th>
@@ -84,6 +88,7 @@
                         </td>
                     </tr>
                     {% endif %}
+                    {# hidden for now:
                     {% if project.lockedUntil is not empty %}
                     <tr>
                         <th>{{ 'project_locked_until'|trans }}</th>
@@ -92,6 +97,7 @@
                         </td>
                     </tr>
                     {% endif %}
+                    #}
                     {% if project.number is not empty %}
                     <tr>
                         <th>{{ 'project_number'|trans }}</th>

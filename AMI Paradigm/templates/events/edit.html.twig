@@ -2,7 +2,7 @@
 
 {% block main %}
     {% set formOptions = {
-        'title': (event.id is null ? 'Add an event' : 'Edit event'),
+        'title': (event.id is null ? 'Add Event' : 'Edit Event'),
         'form': form,
         'back': path('team_events')
     } %}

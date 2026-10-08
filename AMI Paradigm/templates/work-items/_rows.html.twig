@@ -1,0 +1,71 @@
+{#
+    Rows of the "Project mapping" table: one level of the tree (flat = false) or search results (flat = true).
+    The page loads them as needed, see index.html.twig.
+#}
+{% set token = csrf_token('work_item_delete') %}
+{% for row in rows %}
+    {% set item = row.item %}
+    <tr class="wi-row" data-id="{{ item.id }}" data-level="{{ item.level }}" data-children="{{ row.children }}">
+        <td class="w-1 pe-0">
+            <input type="checkbox" class="form-check-input wi-check" value="{{ item.id }}" aria-label="Select {{ item.name }}">
+        </td>
+        <td>
+            <div class="d-flex align-items-start" style="padding-left: {{ flat ? 0 : item.level * 26 }}px">
+                {% if not flat and row.children > 0 %}
+                    <a href="#" class="wi-toggle text-secondary me-2" title="Show what is below" aria-expanded="false"><i class="fas fa-chevron-right fa-fw"></i></a>
+                {% else %}
+                    <span class="me-2" style="width: 1.25em; display: inline-block"></span>
+                {% endif %}
+                <div>
+                    {% if flat and item.parent is not null %}
+                        <div class="text-secondary small">{% for step in item.parent.path %}{{ step.name }}{% if not loop.last %} &rsaquo; {% endif %}{% endfor %}</div>
+                    {% endif %}
+                    <span class="badge bg-{{ ['blue', 'azure', 'teal', 'green', 'yellow'][item.level] ?? 'secondary' }}-lt me-2">{{ row.level_name }}</span>
+                    <span class="{{ item.level == 0 ? 'fw-bold' : '' }}">{{ item.name }}</span>
+                    {% if row.children > 0 %}
+                        <span class="text-secondary small ms-2">{{ row.children }} {{ row.children == 1 ? row.child_name : (row.child_name ends with 'y' ? row.child_name|slice(0, -1) ~ 'ies' : row.child_name ~ 's') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </td>
+        <td>
+            {% if item.users is not empty %}
+                {% for person in item.users|sort((a, b) => a.displayName|lower <=> b.displayName|lower) %}
+                    <span class="badge bg-blue-lt me-1">{{ person.displayName }}</span>
+                {% endfor %}
+            {% elseif row.effective is not empty %}
+                <span class="text-secondary small">Same as {{ row.parent_name }}:</span>
+                {% for person in row.effective|sort((a, b) => a.displayName|lower <=> b.displayName|lower) %}
+                    <span class="badge bg-secondary-lt me-1">{{ person.displayName }}</span>
+                {% endfor %}
+            {% elseif row.below is not empty %}
+                {# nobody on the item itself, but its tasks (or other items below) are assigned: those people pick it on the way there #}
+                <span class="text-secondary small">Assigned further down:</span>
+                {% for person in row.below|sort((a, b) => a.displayName|lower <=> b.displayName|lower) %}
+                    <span class="badge bg-secondary-lt me-1">{{ person.displayName }}</span>
+                {% endfor %}
+            {% else %}
+                <span class="text-danger">Nobody yet &ndash; it cannot be picked on a time entry</span>
+            {% endif %}
+        </td>
+        <td class="text-nowrap">
+            <div class="btn-list flex-nowrap justify-content-end">
+                {% if row.child_name is not null %}
+                    <a href="{{ path('work_items_create', {'project': project.id, 'parent': item.id}) }}" class="btn btn-sm wi-add"><i class="fas fa-plus me-1"></i>{{ row.child_name }}</a>
+                {% endif %}
+                <a href="{{ path('work_items_edit', {'id': item.id}) }}" class="btn btn-sm">{{ 'edit'|trans }}</a>
+                <form method="post" action="{{ path('work_items_delete', {'id': item.id}) }}" class="work-item-delete-form" data-title="{{ item.name }}" data-kind="{{ row.level_name }}" data-children="{{ row.children > 0 ? '1' : '' }}">
+                    <input type="hidden" name="_token" value="{{ token }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">{{ 'delete'|trans }}</button>
+                </form>
+            </div>
+        </td>
+    </tr>
+{% else %}
+    {% if flat %}
+        <tr class="wi-empty"><td colspan="4" class="text-secondary">Nothing found.</td></tr>
+    {% endif %}
+{% endfor %}
+{% if more %}
+    <tr class="wi-empty"><td colspan="4" class="text-secondary">Only the first {{ rows|length }} are shown. Type more of the name to narrow it down.</td></tr>
+{% endif %}

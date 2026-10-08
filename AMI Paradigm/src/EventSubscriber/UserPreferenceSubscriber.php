@@ -26,6 +26,8 @@ use App\Form\Type\UserLocaleType;
 use App\Form\Type\YesNoType;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use App\Holiday\HolidayCalendar;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\MoneyType;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Validator\Constraints\Length;
@@ -79,6 +81,24 @@ final class UserPreferenceSubscriber implements EventSubscriberInterface
                 ->setEnabled($enableHourlyRate)
                 ->setOptions(array_merge($hourlyRateOptions, ['label' => 'internalRate', 'required' => false]))
                 ->addConstraint(new Range(['min' => 0])),
+
+            // The office a person belongs to: decides their holidays and optional holidays (holiday calendar).
+            // Only administrators set it, on the person's preferences page.
+            // (for everybody else the field is switched off, and a switched-off field is kept as a hidden value:
+            // it then must not carry the options of the dropdown)
+            (new UserPreference(HolidayCalendar::USER_PREFERENCE, null))
+                ->setOrder(190)
+                ->setSection('locale')
+                ->setType(ChoiceType::class)
+                ->setEnabled($this->voter->isGranted('ROLE_ADMIN'))
+                ->setOptions($this->voter->isGranted('ROLE_ADMIN') ? [
+                    'label' => 'Office location',
+                    'translation_domain' => false,
+                    'required' => false,
+                    'placeholder' => '',
+                    'choices' => array_combine(HolidayCalendar::LOCATIONS, HolidayCalendar::LOCATIONS),
+                    'help' => 'Decides which holidays and optional holidays apply to this person.',
+                ] : ['label' => 'Office location', 'translation_domain' => false, 'required' => false]),
 
             (new UserPreference(UserPreference::TIMEZONE, $timezone))
                 ->setOrder(200)

@@ -83,6 +83,8 @@ final class LeaveController extends AbstractController
         $form = $this->createForm(LeaveApplyForm::class, $leave, [
             'action' => $this->generateUrl('leave_apply'),
             'method' => 'POST',
+            // the person's office, when an administrator set it
+            'office' => HolidayCalendar::getUserLocation($user),
         ]);
         $form->handleRequest($request);
 
@@ -197,7 +199,7 @@ final class LeaveController extends AbstractController
     public function holidayCalendar(): Response
     {
         return $this->render('leave/holiday-calendar.html.twig', [
-            'page_setup' => new PageSetup('AMIP Holiday calendar'),
+            'page_setup' => new PageSetup('Holiday Calendar'),
         ]);
     }
 

@@ -1,0 +1,482 @@
+{#
+    Time entry form: what is picked depends on the "Type" and on the model of the project.
+
+    Type "Project"                 the person picks one of the projects; below it, by the project's model:
+                                     Agile      Epic > Feature > User Story > Activity > Task
+                                     Waterfall  Module > Sub Module > Business Req > Activity > Task
+    Type "Non-project activities"  the built-in project of that name: Phase > Activity > Task, as before
+                                   (that part is handled by partials/timesheet-cascade.html.twig)
+    Type "Pre-sales"               the built-in project "Pre-Sales": Lead > Phase > Activity > Task
+
+    The form holds everything the person may pick in the "data-work-items" attribute of the ".wi-levels" box
+    (see WorkModelService::getFormData). The dropdowns of the levels are built here; the number of the picked
+    item goes into the hidden "work_item" field, and the server works out the rest when the entry is saved.
+    Registered once for the whole page, so it also covers the form when it opens in a pop-up.
+#}
+<script type="text/javascript">
+    (function () {
+        if (window.__workItemCascade) { return; }
+        window.__workItemCascade = true;
+
+        var TYPES = ['project', 'nonproject', 'presales'];
+
+        function row(el) {
+            return el === null ? null : (el.closest('.mb-3') || el.parentNode);
+        }
+
+        function show(el, visible) {
+            var r = row(el);
+            if (r !== null) { r.classList.toggle('d-none', !visible); }
+        }
+
+        /* the dropdowns are dressed up by the app: after changing the options it is told to redraw them */
+        function redraw(select) {
+            select._wiCascading = true;
+            select.dispatchEvent(new CustomEvent('data-reloaded', {detail: select.value}));
+            select._wiCascading = false;
+        }
+
+        function remember(select) {
+            select._wiNodes = Array.prototype.map.call(select.children, function (node) { return node.cloneNode(true); });
+        }
+
+        function hasOption(select, value) {
+            if (select._wiNodes === undefined) { remember(select); }
+            return select._wiNodes.some(function (node) {
+                if (node.tagName === 'OPTGROUP') {
+                    return Array.prototype.some.call(node.children, function (option) { return option.value === value; });
+                }
+                return node.value === value;
+            });
+        }
+
+        /* show only the projects that pass "keep"; the empty option always stays */
+        function narrowProjects(s, keep) {
+            var select = s.project;
+            if (select._wiNodes === undefined) { remember(select); }
+            var before = select.value;
+            select.innerHTML = '';
+            select._wiNodes.forEach(function (node) {
+                var copy = node.cloneNode(true);
+                if (copy.tagName === 'OPTGROUP') {
+                    Array.prototype.slice.call(copy.children).forEach(function (option) {
+                        if (option.value !== '' && !keep(option)) { copy.removeChild(option); }
+                    });
+                    if (copy.children.length > 0) { select.appendChild(copy); }
+                } else if (copy.value === '' || keep(copy)) {
+                    select.appendChild(copy);
+                }
+            });
+            var still = Array.prototype.some.call(select.options, function (option) { return option.value === before; });
+            select.value = still ? before : '';
+
+            return select.value !== before;
+        }
+
+        function model(s) {
+            var id = s.project.value;
+            return id === '' ? null : (s.data.models[id] || null);
+        }
+
+        function usesItems(s) {
+            var m = model(s);
+            return m !== null && m !== 'nonproject';
+        }
+
+        /* whose entry it is: the person picked in the form, else the owner of the entry; null when several people are picked */
+        function person(s) {
+            if (s.form.querySelector('select[id$="_users"]') !== null) { return null; }
+            if (s.user !== null && s.user.value !== '') { return parseInt(s.user.value, 10); }
+            return s.data.user;
+        }
+
+        function byId(s, id) {
+            if (id === null || id === '' || id === undefined) { return null; }
+            // looked up by number: a project can have thousands of items
+            if (s.byId === undefined) {
+                s.byId = {};
+                s.data.items.forEach(function (item) { s.byId[item.id] = item; });
+            }
+            return s.byId[parseInt(id, 10)] || null;
+        }
+
+        /* the item and the items above it, top level first */
+        function pathOf(s, id) {
+            var path = [];
+            var item = byId(s, id);
+            var guard = 0;
+            while (item !== null && guard++ < 20) {
+                path[item.level] = item.id;
+                item = byId(s, item.parent);
+            }
+            return path;
+        }
+
+        /* the items the person can pick: the ones assigned to them and the items above those */
+        function visibleIds(s, keep) {
+            var who = person(s);
+            var project = parseInt(s.project.value, 10);
+            var visible = {};
+            s.data.items.forEach(function (item) {
+                if (item.project !== project) { return; }
+                // several people picked: everything that is assigned to somebody (the server checks each person)
+                if (who === null ? item.users.length === 0 : item.users.indexOf(who) === -1) { return; }
+                pathOf(s, item.id).forEach(function (id) { visible[id] = true; });
+            });
+            // what the entry already uses stays selectable
+            (keep || []).forEach(function (id) { visible[id] = true; });
+            return visible;
+        }
+
+        function hint(s, text) {
+            var el = s.box.querySelector('.wi-hint');
+            if (text === '') { if (el !== null) { el.remove(); } return; }
+            if (el === null) {
+                el = document.createElement('div');
+                el.className = 'wi-hint text-danger small mb-3 row';
+                el.innerHTML = '<div class="col-sm-2"></div><div class="col-sm-10"></div>';
+                s.box.appendChild(el);
+            }
+            el.lastChild.textContent = text;
+        }
+
+        function buildLevels(s, keepId) {
+            var names = s.data.levels[model(s)] || [];
+            var keep = pathOf(s, keepId);
+            s.visible = visibleIds(s, keep);
+            s.activityLevel = names.length - 2;
+            s.selects = [];
+            s.box.innerHTML = '';
+            names.forEach(function (name, level) {
+                var wrap = document.createElement('div');
+                wrap.className = 'mb-3 row wi-level';
+                var label = document.createElement('label');
+                label.className = 'col-form-label col-sm-2' + (level <= s.activityLevel ? ' required' : '');
+                label.textContent = name;
+                var cell = document.createElement('div');
+                cell.className = 'col-sm-10';
+                var select = document.createElement('select');
+                select.className = 'form-select wi-level-select';
+                select.dataset.level = level;
+                select.dataset.label = name;
+                label.htmlFor = select.id = s.form.getAttribute('name') + '_wi_level_' + level;
+                cell.appendChild(select);
+                wrap.appendChild(label);
+                wrap.appendChild(cell);
+                s.box.appendChild(wrap);
+                s.selects.push(select);
+            });
+            fill(s, 0, keep);
+        }
+
+        /* fills the dropdown of one level with the items below what is picked above it, then goes on with the next level */
+        function fill(s, level, keep) {
+            if (level >= s.selects.length) { sync(s); return; }
+            var select = s.selects[level];
+            var project = parseInt(s.project.value, 10);
+            var parent = level === 0 ? null : (s.selects[level - 1].value === '' ? undefined : parseInt(s.selects[level - 1].value, 10));
+            var options = parent === undefined ? [] : s.data.items.filter(function (item) {
+                return item.project === project && item.level === level && item.parent === parent && s.visible[item.id] === true;
+            });
+
+            select.innerHTML = '';
+            select.appendChild(new Option('', ''));
+            options.forEach(function (item) { select.appendChild(new Option(item.name, String(item.id))); });
+
+            var wanted = keep !== undefined && keep[level] !== undefined ? String(keep[level]) : '';
+            if (wanted !== '' && options.some(function (item) { return String(item.id) === wanted; })) {
+                select.value = wanted;
+            } else if (options.length === 1 && level <= s.activityLevel) {
+                // nothing to choose from: take the only one
+                select.value = String(options[0].id);
+            } else {
+                select.value = '';
+            }
+            select.disabled = parent === undefined;
+            // the task is optional: its row is only shown while the picked activity has tasks
+            if (level > s.activityLevel) { show(select, options.length > 0); }
+
+            fill(s, level + 1, keep);
+        }
+
+        /* copies what is picked into the fields the form sends */
+        function sync(s) {
+            var deepest = -1;
+            s.selects.forEach(function (select, level) { if (select.value !== '') { deepest = level; } });
+            // The picked item has to be the person's own. When only tasks are assigned to them, the activity
+            // above is just the way there: the task has to be picked as well.
+            var who = person(s);
+            var picked = deepest >= 0 ? byId(s, s.selects[deepest].value) : null;
+            var own = picked !== null && (who === null || picked.users.indexOf(who) !== -1 || picked.id === s.data.current);
+            s.item.value = deepest >= s.activityLevel && own ? s.selects[deepest].value : '';
+            s.needTask = deepest === s.activityLevel && !own && s.selects.length > s.activityLevel + 1;
+            if (s.selects.length > s.activityLevel + 1) {
+                var taskLabel = row(s.selects[s.activityLevel + 1]).querySelector('label');
+                if (taskLabel !== null) { taskLabel.classList.toggle('required', s.needTask === true); }
+            }
+
+            var activity = s.selects.length > 0 && s.activityLevel >= 0 ? byId(s, s.selects[s.activityLevel].value) : null;
+            setActivity(s, activity !== null ? activity.activity : null);
+
+            // the old Phase and Task boxes are not used on these projects
+            if (s.phase !== null) { s.phase.value = ''; }
+            if (s.task !== null) { s.task.value = ''; }
+
+            // nothing to pick at all: the empty dropdowns are left out, the note below says why
+            var nothing = s.selects.length > 0 && s.selects[0].options.length <= 1;
+            s.selects.forEach(function (select, level) { if (level <= s.activityLevel) { show(select, !nothing); } });
+            if (nothing) {
+                hint(s, 'Nothing of this project is assigned ' + (person(s) === s.data.user ? 'to you' : 'to this person') + ' yet. A manager or lead does that on the "Project mapping" page.');
+            } else {
+                hint(s, '');
+            }
+        }
+
+        function setActivity(s, id) {
+            if (s.activity === null) { return; }
+            // on these projects the activity comes with the picked item (the server fills it in as well)
+            s.activity.removeAttribute('required');
+            if (id === null || id === undefined) { s.activity.value = ''; return; }
+            var value = String(id);
+            if (!Array.prototype.some.call(s.activity.options, function (option) { return option.value === value; })) {
+                s.activity.appendChild(new Option('', value));
+            }
+            s.activity.value = value;
+        }
+
+        /* shows the fields that belong to the picked type and project */
+        function refresh(s, keepId) {
+            var items = usesItems(s);
+            var none = s.project.value === '';
+            s.form.dataset.wiMode = items ? 'model' : (none ? 'none' : 'plain');
+
+            show(s.phase, !items && !none);
+            show(s.activity, !items && !none);
+            show(s.task, !items && !none);
+
+            if (items) {
+                buildLevels(s, keepId);
+            } else {
+                s.box.innerHTML = '';
+                s.selects = [];
+                s.item.value = '';
+                if (s.activity !== null && s.activity.dataset.wiRequired === '1') { s.activity.setAttribute('required', 'required'); }
+            }
+        }
+
+        function applyType(s, initial) {
+            var type = s.type.value;
+            var special = {nonproject: String(s.data.nonproject), presales: String(s.data.presales)};
+            var changed;
+            if (type === 'project') {
+                changed = narrowProjects(s, function (option) { return option.value !== special.nonproject && option.value !== special.presales; });
+            } else {
+                narrowProjects(s, function (option) { return option.value === special[type]; });
+                changed = s.project.value !== special[type];
+                s.project.value = special[type];
+            }
+            show(s.project, type === 'project');
+            redraw(s.project);
+
+            if (changed && !initial) {
+                // lets the app load the activities of the project, and the phases follow
+                s.project.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+            refresh(s, initial ? s.data.current : null);
+        }
+
+        function setup(form) {
+            if (form._wi !== undefined) { return; }
+            var box = form.querySelector('.wi-levels');
+            if (box === null) { return; }
+            var data;
+            try { data = JSON.parse(box.dataset.workItems); } catch (e) { return; }
+            var s = {
+                form: form,
+                box: box,
+                data: data,
+                type: form.querySelector('select.wi-type'),
+                project: form.querySelector('select[id$="_project"]'),
+                activity: form.querySelector('select[id$="_activity"]'),
+                phase: form.querySelector('select[data-name="phase"]'),
+                task: form.querySelector('select[data-name="task"]'),
+                item: form.querySelector('input[data-name="work_item"]'),
+                user: form.querySelector('select[id$="_user"]'),
+                selects: []
+            };
+            if (s.type === null || s.project === null || s.item === null) { return; }
+            form._wi = s;
+            if (s.activity !== null && s.activity.hasAttribute('required')) { s.activity.dataset.wiRequired = '1'; }
+
+            // an entry from before the models existed keeps its old fields
+            if (data.legacy) {
+                show(s.type, false);
+                form.dataset.wiMode = 'legacy';
+                return;
+            }
+
+            // a type whose project the person cannot book on is not offered
+            TYPES.slice(1).forEach(function (type) {
+                var id = data[type];
+                if (id === null || id === undefined || !hasOption(s.project, String(id))) {
+                    var option = s.type.querySelector('option[value="' + type + '"]');
+                    if (option !== null) { option.remove(); }
+                }
+            });
+
+            var current = s.project.value;
+            if (current !== '' && current === String(data.nonproject)) {
+                s.type.value = 'nonproject';
+            } else if (current !== '' && current === String(data.presales)) {
+                s.type.value = 'presales';
+            } else {
+                s.type.value = 'project';
+            }
+            applyType(s, true);
+        }
+
+        function scan(root) {
+            if (!root.querySelectorAll) { return; }
+            root.querySelectorAll('.wi-levels').forEach(function (box) {
+                var form = box.closest('form');
+                // after the form's own scripts and the phase script (250 ms) have set the dropdowns up
+                if (form !== null && form._wi === undefined) { window.setTimeout(function () { setup(form); }, 320); }
+            });
+        }
+
+        document.addEventListener('change', function (event) {
+            var el = event.target;
+            if (!el.matches || !el.matches('select')) { return; }
+            var form = el.closest('form');
+            if (form === null || form._wi === undefined || form.dataset.wiMode === 'legacy') { return; }
+            var s = form._wi;
+            if (el === s.type) {
+                applyType(s, false);
+            } else if (el === s.project) {
+                refresh(s, null);
+            } else if (el === s.user) {
+                if (usesItems(s)) { buildLevels(s, s.item.value !== '' ? s.item.value : null); }
+            } else if (el.classList.contains('wi-level-select')) {
+                fill(s, parseInt(el.dataset.level, 10) + 1, undefined);
+            }
+        });
+
+        /* the app reloads the lists of projects and activities now and then: bring them back in line */
+        document.addEventListener('data-reloaded', function (event) {
+            var el = event.target;
+            if (!el.matches || !el.matches('select') || el._wiCascading) { return; }
+            var form = el.closest('form');
+            if (form === null || form._wi === undefined || form.dataset.wiMode === 'legacy') { return; }
+            var s = form._wi;
+            if (el === s.activity && form.dataset.wiMode === 'model') {
+                window.setTimeout(function () { if (form.dataset.wiMode === 'model' && s.selects.length > 0) { sync(s); } }, 0);
+            }
+        });
+
+        /* on a project with a model everything down to the activity has to be picked */
+        document.addEventListener('submit', function (event) {
+            var form = event.target;
+            if (form._wi === undefined || form.dataset.wiMode !== 'model') { return; }
+            var s = form._wi;
+            sync(s);
+            if (s.item.value !== '') { return; }
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            var missing = null;
+            s.selects.forEach(function (select, level) {
+                if (missing === null && level <= s.activityLevel && select.value === '') { missing = select; }
+            });
+            if (missing === null && s.needTask) { missing = s.selects[s.activityLevel + 1]; }
+            if (missing !== null && s.selects[0].options.length > 1) {
+                hint(s, 'Please pick the ' + missing.dataset.label + '.');
+            }
+        }, true);
+
+        // ------------------------------------------------------------------ "Weekly hours" grid
+        // Every row has an "Item" dropdown holding the whole path (Epic > Feature > User Story > Activity > Task).
+        // It only offers the items of the project picked in the row, and the activity of the row follows the item.
+
+        function gridRow(el) {
+            return el.closest ? el.closest('tr.qe-entry-week-row') : null;
+        }
+
+        function gridParts(tr) {
+            return {
+                project: tr.querySelector('select[id$="_project"]'),
+                activity: tr.querySelector('select[id$="_activity"]'),
+                item: tr.querySelector('select[data-name="work_item"]')
+            };
+        }
+
+        function gridNarrow(tr) {
+            var p = gridParts(tr);
+            if (p.item === null || p.project === null) { return; }
+            if (p.item._wiNodes === undefined) { remember(p.item); }
+            var before = p.item.value;
+            var project = p.project.value;
+            p.item.innerHTML = '';
+            p.item._wiNodes.forEach(function (node) {
+                if (node.value === '' || (project !== '' && node.dataset.project === project)) { p.item.appendChild(node.cloneNode(true)); }
+            });
+            var still = Array.prototype.some.call(p.item.options, function (option) { return option.value === before; });
+            p.item.value = still ? before : '';
+            redraw(p.item);
+        }
+
+        function gridActivity(tr) {
+            var p = gridParts(tr);
+            if (p.item === null || p.activity === null) { return; }
+            var picked = p.item.selectedOptions.length > 0 ? p.item.selectedOptions[0] : null;
+            if (picked === null || picked.value === '' || !picked.dataset.activity) { return; }
+            var value = picked.dataset.activity;
+            if (!Array.prototype.some.call(p.activity.options, function (option) { return option.value === value; })) {
+                p.activity.appendChild(new Option(picked.dataset.activityName || '', value));
+            }
+            if (p.activity.value !== value) {
+                p.activity.value = value;
+                redraw(p.activity);
+            }
+        }
+
+        function gridScan(root) {
+            if (!root.querySelectorAll) { return; }
+            var rows = root.matches && root.matches('tr.qe-entry-week-row') ? [root] : root.querySelectorAll('tr.qe-entry-week-row');
+            Array.prototype.forEach.call(rows, function (tr) {
+                if (tr._wiGrid) { return; }
+                tr._wiGrid = true;
+                window.setTimeout(function () { gridNarrow(tr); gridActivity(tr); }, 320);
+            });
+        }
+
+        document.addEventListener('change', function (event) {
+            var el = event.target;
+            if (!el.matches || !el.matches('select')) { return; }
+            var tr = gridRow(el);
+            if (tr === null) { return; }
+            var p = gridParts(tr);
+            if (el === p.project) {
+                gridNarrow(tr);
+            } else if (el === p.item) {
+                gridActivity(tr);
+            }
+        });
+
+        /* the app reloads the activities of a row when its project changes: put the activity of the picked item back */
+        document.addEventListener('data-reloaded', function (event) {
+            var el = event.target;
+            if (!el.matches || !el.matches('select[id$="_activity"]') || el._wiCascading) { return; }
+            var tr = gridRow(el);
+            if (tr !== null) { window.setTimeout(function () { gridActivity(tr); }, 0); }
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            scan(document);
+            gridScan(document);
+            new MutationObserver(function (changes) {
+                changes.forEach(function (change) {
+                    change.addedNodes.forEach(function (node) { scan(node); gridScan(node); });
+                });
+            }).observe(document.body, {childList: true, subtree: true});
+        });
+    })();
+</script>

@@ -133,22 +133,23 @@ final class TimesheetMultiUpdate extends AbstractType
             }
         );
 
-        $builder->add('replaceTags', ChoiceType::class, [
-            'label' => false,
-            'required' => true,
-            'expanded' => true,
-            'label_attr' => [
-                'class' => 'radio-inline',
-            ],
-            'choices' => [
-                'append' => false,
-                'replace' => true,
-            ]
-        ]);
-
-        $builder->add('tags', TagsType::class, [
-            'required' => false,
-        ]);
+        // Tags are hidden for now: remove the comment marks to bring them back
+        // $builder->add('replaceTags', ChoiceType::class, [
+        //     'label' => false,
+        //     'required' => true,
+        //     'expanded' => true,
+        //     'label_attr' => [
+        //         'class' => 'radio-inline',
+        //     ],
+        //     'choices' => [
+        //         'append' => false,
+        //         'replace' => true,
+        //     ]
+        // ]);
+        //
+        // $builder->add('tags', TagsType::class, [
+        //     'required' => false,
+        // ]);
 
         $builder->add('replaceDescription', ChoiceType::class, [
             'label' => false,
@@ -184,16 +185,17 @@ final class TimesheetMultiUpdate extends AbstractType
             ]);
         }
 
-        if ($options['include_billable']) {
-            $builder->add('billable', ChoiceType::class, [
-                'label' => 'billable',
-                'choices' => [
-                    '' => null,
-                    'yes' => true,
-                    'no' => false,
-                ],
-            ]);
-        }
+        // Billable is hidden for now: remove the comment marks to bring it back
+        // if ($options['include_billable']) {
+        //     $builder->add('billable', ChoiceType::class, [
+        //         'label' => 'billable',
+        //         'choices' => [
+        //             '' => null,
+        //             'yes' => true,
+        //             'no' => false,
+        //         ],
+        //     ]);
+        // }
 
         if ($options['include_rate']) {
             $builder

@@ -18,7 +18,6 @@ use App\Entity\Timesheet;
 use App\Entity\TimesheetMeta;
 use App\Entity\User;
 use App\Event\TimesheetMetaDefinitionEvent;
-use App\EventSubscriber\TimesheetStatusSubscriber;
 use App\Task\TaskService;
 use App\Timesheet\TimesheetService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -32,7 +31,7 @@ use App\Validator\ValidationFailedException;
 /**
  * Bulk upload of time entries from an Excel file.
  *
- * One row is one entry: date, employee, project > phase > activity > task, hours, status, description.
+ * One row is one entry: date, employee, project > phase > activity > task, hours, description.
  * A row without an employee is for the person who uploads. A row for somebody else is accepted only from
  * that person's superiors (the Supervisor chain) or an administrator; the entry then lands in that
  * person's own timesheet. A row with a problem (for example a row for somebody the uploader is not a
@@ -40,17 +39,18 @@ use App\Validator\ValidationFailedException;
  */
 final class BulkUploadService
 {
-    public const HEADERS = ['Date', 'Employee', 'Project', 'Phase', 'Activity', 'Task', 'Hours', 'Status', 'Description'];
+    public const HEADERS = ['Date', 'Employee', 'Project', 'Phase', 'Activity', 'Task', 'Hours', 'Description'];
     /** Rows with this description are the examples of the template: they are skipped */
     public const SAMPLE_MARK = 'Sample row - replace or delete';
     public const MAX_ROWS = 1000;
-    private const MAX_HOURS = 10;
+    private const MAX_HOURS = \App\Form\Type\DurationType::MAX_ENTRY_HOURS;
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly TaskService $tasks,
         private readonly TimesheetService $timesheets,
         private readonly EventDispatcherInterface $dispatcher,
+        private readonly \App\WorkModel\WorkModelService $workModels,
     ) {
     }
 
@@ -82,7 +82,7 @@ final class BulkUploadService
 
         $sheet = $writer->getCurrentSheet();
         $sheet->setName('Time entries');
-        $widths = [14, 22, 28, 28, 28, 38, 9, 14, 45];
+        $widths = [14, 22, 28, 28, 28, 38, 9, 45];
         foreach ($widths as $index => $width) {
             $sheet->setColumnWidth($width, $index + 1);
         }
@@ -95,7 +95,7 @@ final class BulkUploadService
             $samples = [['Project name', 'Phase name', 'Activity name', '']];
         }
         foreach ($samples as $index => $sample) {
-            $writer->addRow(Row::fromValues([$today, $user->getUserIdentifier(), $sample[0], $sample[1], $sample[2], $sample[3], $index === 0 ? 2 : 1.5, TimesheetStatusSubscriber::IN_PROGRESS, self::SAMPLE_MARK]));
+            $writer->addRow(Row::fromValues([$today, $user->getUserIdentifier(), $sample[0], $sample[1], $sample[2], $sample[3], $index === 0 ? 2 : 1.5, self::SAMPLE_MARK]));
         }
 
         $help = $writer->addNewSheetAndMakeItCurrent();
@@ -111,7 +111,6 @@ final class BulkUploadService
             ['Activity', 'An activity of that phase.'],
             ['Task', 'Optional. A task of that activity.'],
             ['Hours', 'From 0.5 to ' . self::MAX_HOURS . ' in steps of 0.5 (0.5, 1, 1.5, 2 ...).'],
-            ['Status', TimesheetStatusSubscriber::IN_PROGRESS . ' or ' . TimesheetStatusSubscriber::COMPLETED . '. Empty means ' . TimesheetStatusSubscriber::IN_PROGRESS . '.'],
             ['Description', 'Optional note. Rows that still say "' . self::SAMPLE_MARK . '" are examples and are skipped.'],
             ['', ''],
             ['Good to know', 'Keep the first row (the column names) as it is. Correct rows are saved; rows with a problem are rejected and listed. Fix those and upload only them again, otherwise the saved rows are doubled.'],
@@ -263,18 +262,6 @@ final class BulkUploadService
             $hours = null;
         }
 
-        // status
-        $status = trim((string) $row['Status']);
-        if ($status === '') {
-            $status = TimesheetStatusSubscriber::IN_PROGRESS;
-        } elseif ($this->same($status, TimesheetStatusSubscriber::IN_PROGRESS)) {
-            $status = TimesheetStatusSubscriber::IN_PROGRESS;
-        } elseif ($this->same($status, TimesheetStatusSubscriber::COMPLETED)) {
-            $status = TimesheetStatusSubscriber::COMPLETED;
-        } else {
-            $errors[] = 'Status "' . $status . '" has to be "' . TimesheetStatusSubscriber::IN_PROGRESS . '" or "' . TimesheetStatusSubscriber::COMPLETED . '".';
-        }
-
         if ($user === null) {
             return null;
         }
@@ -312,7 +299,6 @@ final class BulkUploadService
         $timesheet->setBillableMode(Timesheet::BILLABLE_AUTOMATIC);
 
         $this->setMeta($timesheet, Phase::TIMESHEET_META_FIELD, (string) $phase->getName());
-        $this->setMeta($timesheet, TimesheetStatusSubscriber::FIELD, $status);
         if ($task !== null) {
             $this->setMeta($timesheet, Task::TIMESHEET_META_FIELD, $task);
         }
@@ -346,6 +332,13 @@ final class BulkUploadService
         $cache[$key] ??= $this->tasks->getProjects($user);
         foreach ($cache[$key] as $project) {
             if ($this->same((string) $project->getName(), $name)) {
+                // Agile, Waterfall and Pre-sales entries pick an assigned item (Epic > Feature > User Story ...): not covered by the file yet
+                if ($this->workModels->usesItems($project)) {
+                    $errors[] = 'Project "' . $name . '" is ' . $this->workModels->getModelName($project) . ': its time is entered on the time entry form or in "Weekly hours", not by bulk upload.';
+
+                    return null;
+                }
+
                 return $project;
             }
         }
@@ -457,6 +450,10 @@ final class BulkUploadService
         $taskRepository = $this->entityManager->getRepository(ActivityTask::class);
         $lines = [];
         foreach ($projects as $project) {
+            // only the projects the file can be used for (see findProject)
+            if ($this->workModels->usesItems($project)) {
+                continue;
+            }
             foreach ($this->phasesOf($project) as $phase) {
                 $activities = $this->activitiesOf($project, $phase);
                 if ($activities === []) {

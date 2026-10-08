@@ -134,7 +134,7 @@ final class QuickEntryTimesheetType extends AbstractType
             'data_class' => Timesheet::class,
             'timezone' => date_default_timezone_get(),
             'duration_minutes' => null,
-            'duration_hours' => 10,
+            'duration_hours' => DurationType::MAX_ENTRY_HOURS,
         ]);
     }
 }

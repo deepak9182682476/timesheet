@@ -223,11 +223,13 @@
     {% elseif durationText matches '/^\\d+([.,]\\d+)?$/' %}
         {% set durationHours = durationText|replace({',': '.'}) %}
     {% endif %}
-    {% set durationMax = attr['data-max-hours']|default(10) %}
+    {% set durationMax = attr['data-max-hours']|default(constant('App\\Form\\Type\\DurationType::MAX_ENTRY_HOURS')) %}
+    {# a time entry is at least half an hour; other durations (the hourly quota of a project, say) set their own lowest value #}
+    {% set durationMin = attr['data-min-hours'] is defined ? attr['data-min-hours'] : 0.5 %}
     {# an older entry such as 0:51 does not sit on a half-hour step: allow it as it is #}
     {% set durationStep = (durationHours is not same as('') and (durationHours * 2) != (durationHours * 2)|round) ? 'any' : '0.5' %}
     <div class="duration-widget">
-        <input type="number" class="form-control duration-hours" min="0.5" max="{{ durationMax }}" step="{{ durationStep }}" value="{{ durationHours }}" data-target="{{ id }}" inputmode="decimal" autocomplete="off" aria-label="{{ 'duration'|trans }}"{% if required or attr.required is defined %} required{% endif %}{% if disabled %} disabled{% endif %}>
+        <input type="number" class="form-control duration-hours" min="{{ durationMin }}" max="{{ durationMax }}" step="{{ durationStep }}" value="{{ durationHours }}" data-target="{{ id }}" inputmode="decimal" autocomplete="off" aria-label="{{ 'duration'|trans }}"{% if required or attr.required is defined %} required{% endif %}{% if disabled %} disabled{% endif %}>
         {% set attr = attr|filter((v, k) => k != 'required' and k != 'pattern')|merge({'class': (attr.class|default('') ~ ' d-none')|trim, 'tabindex': '-1'}) %}
         {% set required = false %}
         {{ block('form_widget_simple') }}

@@ -130,6 +130,42 @@ final class TeamEventService
     }
 
     /**
+     * Approved leave of the people in this user's teams (the user included) that is not over yet. It is listed
+     * from the moment it is approved until the end of its last day, so leave for tomorrow shows until tomorrow
+     * 11:59 pm and is gone after that. Leave waiting for a decision and rejected leave are not listed;
+     * cancelled leave does not exist any more.
+     *
+     * @return array<TeamEvent>
+     */
+    public function getTeammateLeave(User $user): array
+    {
+        $people = [(int) $user->getId() => $user];
+        foreach ($user->getTeams() as $team) {
+            foreach ($team->getUsers() as $member) {
+                if ($member->isEnabled()) {
+                    $people[(int) $member->getId()] = $member;
+                }
+            }
+        }
+
+        return $this->entityManager->createQueryBuilder()
+            ->select('e')
+            ->from(TeamEvent::class, 'e')
+            ->where('e.type = :leave')
+            ->andWhere('e.status = :approved')
+            ->andWhere('e.endDate >= :today')
+            ->andWhere('e.user IN (:people)')
+            ->setParameter('leave', TeamEvent::TYPE_LEAVE)
+            // earlier leave waiting for approval was listed too: [TeamEvent::STATUS_PENDING, TeamEvent::STATUS_APPROVED]
+            ->setParameter('approved', TeamEvent::STATUS_APPROVED)
+            ->setParameter('today', (new \DateTime('today'))->format('Y-m-d'))
+            ->setParameter('people', array_keys($people))
+            ->orderBy('e.startDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Events of the past that applied to this user, newest first.
      *
      * @return array<TeamEvent>
@@ -595,13 +631,23 @@ final class TeamEventService
         }
 
         $or = $qb->expr()->orX(
-            '(e.user IS NULL AND e.team IS NULL)',
+            // "Everyone" (was: '(e.user IS NULL AND e.team IS NULL)', before "All my teams" existed)
+            '(e.user IS NULL AND e.team IS NULL AND e.allMyTeams = false)',
             'e.user = :me'
         );
         if ($teamIds !== []) {
             $or->add('e.team IN (:myTeams)');
             $qb->setParameter('myTeams', $teamIds);
         }
+        // "All my teams": for everybody who shares a team with the person who added the event
+        $mates = [(int) $user->getId()];
+        foreach ($user->getTeams() as $team) {
+            foreach ($team->getUsers() as $member) {
+                $mates[] = (int) $member->getId();
+            }
+        }
+        $or->add('(e.allMyTeams = true AND e.createdBy IN (:teamMates))');
+        $qb->setParameter('teamMates', array_values(array_unique($mates)));
         // on the Events page people also see the events they added for others, so they can change them
         if (!$personal) {
             $or->add('e.createdBy = :me');

@@ -1,0 +1,128 @@
+{% extends 'base.html.twig' %}
+
+{# Project mapping from an Excel file: download the template, fill it, upload it (see WorkItemImportService) #}
+{% block main %}
+    {% if result is not null %}
+        {% if result.rows > 0 %}
+            <div class="alert alert-success" role="alert">
+                <h4 class="alert-title">{{ result.rows }} {{ result.rows == 1 ? 'row' : 'rows' }} read{% if file_name %} from {{ file_name }}{% endif %}</h4>
+                <div class="text-secondary">
+                    {{ result.created }} new {{ result.created == 1 ? 'item' : 'items' }} added &middot;
+                    {{ result.assigned }} {{ result.assigned == 1 ? 'item' : 'items' }} assigned or reassigned.
+                    {% if (result.existing ?? 0) > 0 and (result.created > 0 or result.assigned > 0) %}<br>{{ result.existing }} {{ result.existing == 1 ? 'row was' : 'rows were' }} there already and not added again.{% endif %}
+                    {% if result.created == 0 and result.assigned == 0 %}Everything in the file was there already.{% endif %}
+                </div>
+                <div class="mt-2"><a href="{{ path('work_items', {'project': project.id}) }}" class="btn btn-sm">Open the mapping of {{ project.name }}</a></div>
+            </div>
+        {% endif %}
+        {% if result.errors is not empty %}
+            <div class="card mb-3 border-danger">
+                <div class="card-header">
+                    <h3 class="card-title text-danger">
+                        {% if result.rows > 0 %}
+                            {{ result.errors|length }} {{ result.errors|length == 1 ? 'row was' : 'rows were' }} rejected and not saved
+                        {% else %}
+                            Nothing was uploaded{% if file_name %} from {{ file_name }}{% endif %}
+                        {% endif %}
+                    </h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-vcenter card-table">
+                        <thead>
+                        <tr>
+                            <th class="w-1 text-nowrap">Excel row</th>
+                            <th>Problem</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for line, problems in result.errors|slice(0, 200, true) %}
+                            <tr>
+                                <td class="fw-bold">{{ line }}</td>
+                                <td>{% for problem in problems %}<div>{{ problem }}</div>{% endfor %}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-footer text-secondary">
+                    {% if result.errors|length > 200 %}Only the first 200 are listed. {% endif %}
+                    {% if result.rows > 0 %}The other rows are saved. Correct the rejected rows and upload the file again: what is saved already is not doubled.{% endif %}
+                </div>
+            </div>
+        {% endif %}
+    {% endif %}
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">Bulk Upload for {{ project.name }} <span class="badge bg-blue-lt ms-1">{{ project_model_name(project) }}</span></h3>
+            <div class="card-actions">
+                <a href="{{ path('work_items', {'project': project.id}) }}" class="btn">Back to Mapping</a>
+            </div>
+        </div>
+        <div class="card-body text-secondary">
+            Fill the whole project from one Excel file: every {{ levels|join(', ') }}, and who each one is assigned to.
+        </div>
+    </div>
+
+    <div class="row row-cards">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h3 class="card-title">1. Download the Excel File</h3></div>
+                <div class="card-body">
+                    <p>Columns: <strong>{{ headers|join(', ') }}</strong></p>
+                    <p class="text-secondary small">The file also has a sheet with the rules and an example, and a sheet with the usernames of the people you can assign.</p>
+                    <div class="btn-list">
+                        <a href="{{ path('work_items_template', {'project': project.id}) }}" class="btn btn-outline-primary"><i class="fas fa-download me-2"></i>Empty Template</a>
+                        <a href="{{ path('work_items_template', {'project': project.id, 'data': 1}) }}" class="btn"><i class="fas fa-download me-2"></i>Current Mapping</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h3 class="card-title">2. Upload the Filled File</h3></div>
+                <div class="card-body">
+                    <form method="post" action="{{ path('work_items_upload', {'project': project.id}) }}" enctype="multipart/form-data">
+                        <input type="hidden" name="_token" value="{{ csrf_token('work_item_upload') }}">
+                        <div class="mb-3">
+                            <input type="file" name="file" class="form-control" accept=".xlsx" required>
+                            <div class="form-hint">Excel file (.xlsx), up to {{ max_rows }} rows.</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-upload me-2"></i>Upload</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header"><h3 class="card-title">How the File Is Filled</h3></div>
+        <div class="table-responsive">
+            <table class="table table-sm card-table">
+                <thead>
+                <tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}</tr>
+                </thead>
+                <tbody>
+                {% for row in example %}
+                    <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-body">
+            <ul class="mb-0">
+                <li>One row is one {{ levels|last|lower }}. Fill in every cell of the row: {{ levels|join(', ') }}.</li>
+                <li>Write the names again on every row. The {{ levels[0] }} is created the first time it appears and used again on the rows after it, so nothing is doubled.</li>
+                <li><strong>Assigned to</strong> is for the last item of the row: usernames, e-mails or names, separated by commas.
+                    {% if people is not empty %}<span class="text-secondary">({{ people|map(p => p.userIdentifier)|slice(0, 12)|join(', ') }}{% if people|length > 12 %}, &hellip;{% endif %})</span>{% endif %}
+                </li>
+                <li>The same people are also put on everything before it in the row ({{ levels|slice(0, -1)|join(', ') }}), so they can book on those as well.</li>
+                <li>A row can stop early: a row with only the {{ levels[0] }} and "Assigned to" assigns the whole {{ levels[0] }}. Items without people of their own are for the same people as the item above them.</li>
+                <li>This page is for <strong>{{ project_model_name(project) }}</strong> projects. A file made for another model has other columns and is refused as a whole.</li>
+                <li>Items that exist already are found by their name. Nothing is ever deleted by an upload.</li>
+                <li><strong>To change who things are assigned to later</strong>: download "Current mapping", change the "Assigned to" column in Excel and upload the file again. Empty changes nothing; a single "-" takes everybody off.</li>
+                <li>Rows with a problem are rejected and listed here with their Excel row number. The other rows are saved.</li>
+            </ul>
+        </div>
+    </div>
+{% endblock %}

@@ -61,12 +61,123 @@
 {% block main %}
     {% set token = csrf_token('team_event_delete') %}
 
+    {# Approved leave of the people in my teams: from its approval until its last day is over #}
+    {% if team_leave is not empty %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-plane-departure me-2 text-secondary"></i>Team Leave</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Who</th>
+                        <th>Leave</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for leave in team_leave %}
+                        {% set running = leave.startDate|date_format('Y-m-d') <= today %}
+                        <tr>
+                            <td class="text-nowrap">
+                                {{ leave.startDate|date_short }}{% if leave.multiDay %} &ndash; {{ leave.endDate|date_short }}{% endif %}
+                                <div class="text-secondary small">
+                                    {{ leave.startDate|date_format('l') }}{% if leave.multiDay %} &ndash; {{ leave.endDate|date_format('l') }}{% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <span class="fw-bold">{{ leave.user.displayName }}</span>{% if leave.user.id == app.user.id %} <span class="text-secondary">(you)</span>{% endif %}
+                                {% if running %}<span class="badge bg-danger text-white ms-1">On leave today</span>{% endif %}
+                            </td>
+                            <td>{{ leave.title == 'Optional holiday' ? 'Optional holiday' : 'Leave' }}{% if leave.days > 1 %} <span class="text-secondary">· {{ leave.days }} days</span>{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
+    {# Festival and optional holidays of the holiday calendar: from a week before until the day is over #}
+    {% if holidays is not empty %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-calendar-alt me-2 text-secondary"></i>Holidays This Week</h3>
+                <div class="card-actions"><a href="{{ path('holiday_calendar') }}" class="btn btn-sm">Holiday Calendar</a></div>
+            </div>
+            <div class="table-responsive">
+                {% if my_office %}
+                {# the person's own office: only what applies there #}
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Festival</th>
+                        <th>At {{ my_office }}</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for day in holidays %}
+                        <tr>
+                            <td class="text-nowrap">
+                                {{ day.date|date_short }}
+                                <div class="text-secondary small">{{ day.date|date_format('l') }}</div>
+                            </td>
+                            <td>
+                                <span class="fw-bold">{{ day.name }}</span>
+                                {% if day.date|date_format('Y-m-d') == today %}<span class="badge bg-danger text-white ms-1">Today</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if day.mine == 'Holiday' %}
+                                    <span class="badge bg-green-lt">Holiday</span>
+                                {% else %}
+                                    <span class="badge bg-blue-lt">Optional holiday</span> <a href="{{ path('leave_apply') }}" class="small ms-1">Apply</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                {# no office set for this person: every office side by side #}
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Festival</th>
+                        <th>Holiday at</th>
+                        <th>Optional holiday at</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for day in holidays %}
+                        <tr>
+                            <td class="text-nowrap">
+                                {{ day.date|date_short }}
+                                <div class="text-secondary small">{{ day.date|date_format('l') }}</div>
+                            </td>
+                            <td>
+                                <span class="fw-bold">{{ day.name }}</span>
+                                {% if day.date|date_format('Y-m-d') == today %}<span class="badge bg-danger text-white ms-1">Today</span>{% endif %}
+                            </td>
+                            <td>{{ day.everywhere ? 'All offices' : (day.holiday_at is empty ? '–' : day.holiday_at|join(', ')) }}</td>
+                            <td>{{ day.optional_at is empty ? '–' : day.optional_at|join(', ') }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+
     <div class="card mb-3">
         <div class="card-header">
-            <h3 class="card-title">Upcoming events</h3>
+            <h3 class="card-title">Upcoming Events</h3>
             {% if can_manage %}
                 <div class="card-actions">
-                    <a href="{{ path('team_events_create') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Add an event</a>
+                    <a href="{{ path('team_events_create') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Add Event</a>
                 </div>
             {% endif %}
         </div>
@@ -79,14 +190,16 @@
         {% endif %}
     </div>
 
+    {# "Past events" is hidden for now: remove the comment marks to show it again
     {% if past is not empty %}
         <div class="card mb-3">
             <div class="card-header">
-                <h3 class="card-title">Past events</h3>
+                <h3 class="card-title">Past Events</h3>
             </div>
             {{ _self.event_table(past, editable, token, today) }}
         </div>
     {% endif %}
+    #}
 
     <script type="text/javascript">
         // ask before deleting an event

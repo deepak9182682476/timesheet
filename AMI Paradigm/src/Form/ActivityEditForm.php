@@ -85,16 +85,18 @@ class ActivityEditForm extends AbstractType
                 ]);
         }
 
-        if ($isNew) {
-            $builder
-                ->add('teams', TeamType::class, [
-                    'required' => false,
-                    'multiple' => true,
-                    'expanded' => false,
-                    'by_reference' => false,
-                    'help' => 'help.teams',
-                ]);
-        }
+        // "Team" is hidden for now: teams are put together by Project Managers and Leads on "Team Mapping",
+        // not by the administrator here. Remove the comment marks to bring the field back.
+        // if ($isNew) {
+        //     $builder
+        //         ->add('teams', TeamType::class, [
+        //             'required' => false,
+        //             'multiple' => true,
+        //             'expanded' => false,
+        //             'by_reference' => false,
+        //             'help' => 'help.teams',
+        //         ]);
+        // }
 
         $this->addCommonFields($builder, $options);
     }

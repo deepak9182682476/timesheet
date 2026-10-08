@@ -27,17 +27,31 @@ final class ExportToolbarForm extends AbstractType
     {
         $this->addSearchTermInputField($builder);
         $this->addDateRange($builder, ['timezone' => $options['timezone']]);
-        $this->addCustomerMultiChoice($builder, ['start_date_param' => null, 'end_date_param' => null, 'ignore_date' => true], true);
-        $this->addProjectMultiChoice($builder, ['ignore_date' => true], true, true);
-        $this->addActivitySelect($builder, [], true, true, false);
-        $this->addTagInputField($builder);
+        // The customer filter is hidden for now, the export is filtered by project:
+        // remove the comment marks to bring it back
+        // $this->addCustomerMultiChoice($builder, ['start_date_param' => null, 'end_date_param' => null, 'ignore_date' => true], true);
+        // One plain list of projects, sorted by name (the earlier list was grouped by customer:
+        // remove 'group_by' to get the groups back)
+        $this->addProjectMultiChoice($builder, ['ignore_date' => true, 'group_by' => null], true, true);
+        // The activity filter is hidden for now: remove the comment marks to bring it back
+        // $this->addActivitySelect($builder, [], true, true, false);
+        // Tags are hidden for now: remove the comment marks to bring them back
+        // $this->addTagInputField($builder);
         if ($options['include_user']) {
-            $this->addUsersChoice($builder);
+            // People who are not admins only get their own people to choose from (and themselves),
+            // see ExportController::getTeamUsers(). null = everybody (admins).
+            if (\is_array($options['team_users'])) {
+                $this->addUsersChoice($builder, 'users', ['choices' => $options['team_users']]);
+            } else {
+                $this->addUsersChoice($builder);
+            }
             $this->addTeamsChoice($builder);
         }
         $this->addExportStateChoice($builder);
-        $this->addTimesheetStateChoice($builder);
-        $this->addBillableChoice($builder);
+        // The "Records" filter (running / stopped) is hidden for now, the export keeps its default (stopped records): remove the comment marks to bring it back
+        // $this->addTimesheetStateChoice($builder);
+        // Billable is hidden for now: remove the comment marks to bring it back
+        // $this->addBillableChoice($builder);
         $builder->add('renderer', HiddenType::class, []);
         if ($options['include_export']) {
             $builder->add('markAsExported', HiddenType::class, [
@@ -54,6 +68,7 @@ final class ExportToolbarForm extends AbstractType
             'csrf_protection' => false,
             'include_user' => true,
             'include_export' => true,
+            'team_users' => null,
             'timezone' => date_default_timezone_get(),
         ]);
     }

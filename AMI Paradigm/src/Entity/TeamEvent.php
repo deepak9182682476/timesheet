@@ -116,6 +116,20 @@ class TeamEvent
     #[ORM\Column(name: 'timesheet_synced', type: Types::BOOLEAN, nullable: false, options: ['default' => false])]
     private bool $timesheetSynced = false;
 
+    /** True for an event that is for every team of the person who added it ("All my teams") */
+    #[ORM\Column(name: 'all_my_teams', type: Types::BOOLEAN, nullable: false, options: ['default' => false])]
+    private bool $allMyTeams = false;
+
+    public function isAllMyTeams(): bool
+    {
+        return $this->allMyTeams;
+    }
+
+    public function setAllMyTeams(bool $allMyTeams): void
+    {
+        $this->allMyTeams = $allMyTeams;
+    }
+
     public function isTimesheetSynced(): bool
     {
         return $this->timesheetSynced;
@@ -285,6 +299,16 @@ class TeamEvent
 
         if ($this->team !== null) {
             return 'Team ' . $this->team->getName();
+        }
+
+        if ($this->allMyTeams) {
+            $names = [];
+            foreach ($this->createdBy?->getTeams() ?? [] as $team) {
+                $names[] = (string) $team->getName();
+            }
+            sort($names);
+
+            return $names !== [] ? 'Teams ' . implode(', ', $names) : 'All teams of ' . $this->createdBy?->getDisplayName();
         }
 
         return 'Everyone';

@@ -464,7 +464,10 @@ final class ProfileController extends AbstractController
             [
                 'action' => $this->generateUrl('user_profile_edit', ['username' => $user->getUserIdentifier()]),
                 'method' => 'POST',
-                'include_active_flag' => $user !== $currentUser,
+                // "Active" is not switched here any more: a user is disabled with a reason through
+                // "Disable" in the users list (UserStatusController), which also takes them off their projects.
+                // 'include_active_flag' => $user !== $currentUser,
+                'include_active_flag' => false,
                 'include_preferences' => true,
                 'include_supervisor' => $this->isGranted('supervisor', $user),
                 'include_username' => $currentUser->isSuperAdmin() && $currentUser !== $user,

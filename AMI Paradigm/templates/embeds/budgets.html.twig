@@ -26,19 +26,21 @@
                             <td>{{ durationTrans|trans }}</td>
                             <td class="text-nowrap text-end">{{ stats.duration|duration }}</td>
                         </tr>
+                        {# Billable is hidden for now: the quota counts every hour booked (stats.duration, was stats.durationBillable)
                         <tr>
                             <td>{{ 'billable'|trans }}</td>
                             <td class="text-nowrap text-end">{{ stats.durationBillable|duration }}</td>
                         </tr>
+                        #}
                         {% if entity.timeBudget > 0 %}
                             {% set totalPercentReached = 100 %}
                             {% if entity.timeBudget > 0 %}
-                                {% set totalPercentReached = (stats.durationBillable / (entity.timeBudget / 100)) %}
+                                {% set totalPercentReached = (stats.duration / (entity.timeBudget / 100)) %}
                             {% endif %}
                             <tr>
                                 <th colspan="2" class="text-nowrap text-end">
                                     {% if totalPercentReached < 100 %}
-                                        {{ 'stats.percentUsedLeft'|trans({'%percent%': totalPercentReached|number_format(2), '%left%': (entity.timeBudget - stats.durationBillable)|duration}) }}
+                                        {{ 'stats.percentUsedLeft'|trans({'%percent%': totalPercentReached|number_format(2), '%left%': (entity.timeBudget - stats.duration)|duration}) }}
                                     {% else %}
                                         {{ 'stats.percentUsed'|trans({'%percent%': totalPercentReached|number_format(2)}) }}
                                     {% endif %}
@@ -49,9 +51,11 @@
                 </div>
                 <div class="col-12 col-md-6 order-0 order-md-1 p-3">
                     {% if entity.timeBudget > 0 %}
-                        <div class="mb-3">{{ progress.progressbar(entity.timeBudget, stats.durationBillable, durationTrans|trans, stats.durationBillable|duration ~ ' / ' ~ entity.timeBudget|duration) }}</div>
+                        <div class="mb-3">{{ progress.progressbar(entity.timeBudget, stats.duration, durationTrans|trans, stats.duration|duration ~ ' / ' ~ entity.timeBudget|duration) }}</div>
                     {% endif %}
+                    {# Billable is hidden for now
                     <div class="mb-3">{{ progress.progressbar(stats.duration, stats.durationBillable, 'billable'|trans, stats.durationBillable|duration ~ ' / ' ~ stats.duration|duration, true) }}</div>
+                    #}
                 </div>
             </div>
         {% endblock %}

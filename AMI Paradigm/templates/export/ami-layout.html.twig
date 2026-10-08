@@ -1,0 +1,153 @@
+{#
+    The timesheet as a document (PDF and print): a header with who, when and how many hours, then one plain
+    table. The columns follow the kind of work that is exported - see WorkModelService::describeExport():
+      Agile        Date, Project, Epic, Feature, User Story, Activity, Task, Hours, Description
+      Waterfall    Date, Project, Module, Sub Module, Business Req, Activity, Task, Hours, Description
+      Pre-sales    Date, Lead, Phase, Activity, Task, Hours, Description
+      Non-project  Date, Phase, Activity, Task, Hours, Description
+      mixed        Date, Project, Type, Work item (the whole path), Activity, Task, Hours, Description
+    An "Employee" column is added when the entries are of more than one person.
+    The PDF and the print page extend this file and only bring their own styles.
+    These templates run with restrictions: only the plain tags and filters listed in Twig/SecurityPolicy/StrictPolicy.php.
+#}
+{% set decimal = decimal ?? false %}
+{% set fields = work.columns %}
+{% set total = 0 %}
+{% set first = null %}
+{% set last = null %}
+{% set projects = {} %}
+{% for entry in entries %}
+    {% set total = total + entry.duration %}
+    {% if first is null or entry.begin.timestamp < first.timestamp %}{% set first = entry.begin %}{% endif %}
+    {% if last is null or entry.begin.timestamp > last.timestamp %}{% set last = entry.begin %}{% endif %}
+    {% set projectName = entry.project.name %}
+    {% set projects = projects|merge({(projectName): (projects[projectName] ?? 0) + entry.duration}) %}
+{% endfor %}
+{% set leading = 1 + (work.showEmployee ? 1 : 0) + (work.showProject ? 1 : 0) + (work.mixed ? 2 : fields|length) + 2 %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Timesheet</title>
+    <style>
+        {% block styles %}{% endblock %}
+    </style>
+</head>
+<body>
+{% block page_footer %}{% endblock %}
+<div class="sheet">
+    <table class="head">
+        <tr>
+            <td class="head-title">
+                <div class="title">Timesheet</div>
+                <div class="subtitle">{{ work.title }}</div>
+            </td>
+            <td class="head-facts">
+                <table class="facts">
+                    {% if not work.showEmployee and entries|length > 0 %}
+                        <tr><td class="fact-name">Employee</td><td class="fact-value">{{ (entries|first).user.displayName }}</td></tr>
+                    {% endif %}
+                    <tr>
+                        <td class="fact-name">Period</td>
+                        <td class="fact-value">
+                            {% if query.begin is not empty and query.end is not empty %}
+                                {{ query.begin|date_short }} &ndash; {{ query.end|date_short }}
+                            {% elseif first is not null %}
+                                {{ first|date_short }}{% if first|date_short != last|date_short %} &ndash; {{ last|date_short }}{% endif %}
+                            {% else %}
+                                &ndash;
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr><td class="fact-name">Entries</td><td class="fact-value">{{ entries|length }}</td></tr>
+                    <tr><td class="fact-name">Total hours</td><td class="fact-value total">{{ decimal ? total|duration_decimal : total|duration }}</td></tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <table class="entries">
+        <thead>
+        <tr>
+            <th class="col-date">Date</th>
+            {% if work.showEmployee %}<th>Employee</th>{% endif %}
+            {% if work.showProject %}<th>Project</th>{% endif %}
+            {% if work.mixed %}
+                <th>Type</th>
+                <th>Work item</th>
+            {% else %}
+                {% for field, label in fields %}<th>{{ label }}</th>{% endfor %}
+            {% endif %}
+            <th>Activity</th>
+            <th>Task</th>
+            <th class="col-hours">Hours</th>
+            <th class="col-description">Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for entry in entries %}
+            {% set taskField = entry.metaField('task') %}
+            {% set task = taskField is not null ? taskField.value : '' %}
+            <tr class="{{ loop.index is even ? 'even' : 'odd' }}">
+                <td class="col-date">{{ entry.begin|date_short }}</td>
+                {% if work.showEmployee %}<td>{{ entry.user.displayName }}</td>{% endif %}
+                {% if work.showProject %}<td>{{ entry.project.name }}</td>{% endif %}
+                {% if work.mixed %}
+                    <td>{{ work.types[entry.project.id] ?? '' }}</td>
+                    <td>
+                        {% set steps = [] %}
+                        {% for field, label in fields %}
+                            {% set step = entry.metaField(field) %}
+                            {% if step is not null and step.value is not empty %}{% set steps = steps|merge([step.value]) %}{% endif %}
+                        {% endfor %}
+                        {{ steps|join(' › ') }}
+                    </td>
+                {% else %}
+                    {% for field, label in fields %}
+                        {% set step = entry.metaField(field) %}
+                        <td>{{ step is not null ? step.value : '' }}</td>
+                    {% endfor %}
+                {% endif %}
+                <td>{{ entry.activity is not null ? entry.activity.name : '' }}</td>
+                <td>{% if task is not empty %}{{ task matches '/^\\d+$/' ? 'Task #' ~ task : task }}{% endif %}</td>
+                <td class="col-hours">{{ decimal ? entry.duration|duration_decimal : entry.duration|duration }}</td>
+                <td class="col-description">{{ entry.description|default('')|nl2br }}</td>
+            </tr>
+        {% else %}
+            <tr><td colspan="{{ leading + 2 }}" class="empty">No entries.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if entries|length > 0 %}
+            <tfoot>
+            <tr>
+                <td colspan="{{ leading }}" class="total-label">Total</td>
+                <td class="col-hours total">{{ decimal ? total|duration_decimal : total|duration }}</td>
+                <td></td>
+            </tr>
+            </tfoot>
+        {% endif %}
+    </table>
+
+    {# hours per project: only worth showing when there is more than one #}
+    {% if projects|length > 1 %}
+        <div class="summary-title">Hours by project</div>
+        <table class="summary">
+            <thead>
+            <tr><th>Project</th><th class="col-hours">Hours</th></tr>
+            </thead>
+            <tbody>
+            {% for projectName, seconds in projects %}
+                <tr class="{{ loop.index is even ? 'even' : 'odd' }}">
+                    <td>{{ projectName }}</td>
+                    <td class="col-hours">{{ decimal ? seconds|duration_decimal : seconds|duration }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+            <tr><td class="total-label">Total</td><td class="col-hours total">{{ decimal ? total|duration_decimal : total|duration }}</td></tr>
+            </tfoot>
+        </table>
+    {% endif %}
+</div>
+</body>
+</html>

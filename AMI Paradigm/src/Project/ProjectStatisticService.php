@@ -214,9 +214,10 @@ class ProjectStatisticService
 
     /**
      * @param Project[] $projects
+     * @param User|null $user count only the hours this person booked (the "My projects" box of the dashboard); null counts everybody's
      * @return ProjectBudgetStatisticModel[]
      */
-    public function getBudgetStatisticModelForProjects(array $projects, DateTimeInterface $today): array
+    public function getBudgetStatisticModelForProjects(array $projects, DateTimeInterface $today, ?User $user = null): array
     {
         $models = [];
         $monthly = [];
@@ -231,7 +232,7 @@ class ProjectStatisticService
             }
         }
 
-        $statisticsTotal = $this->getBudgetStatistic($projects);
+        $statisticsTotal = $this->getBudgetStatistic($projects, null, null, $user);
         foreach ($statisticsTotal as $id => $statistic) {
             $models[$id]->setStatisticTotal($statistic);
         }
@@ -244,7 +245,7 @@ class ProjectStatisticService
         if (\count($monthly) > 0) {
             $begin = $dateFactory->getStartOfMonth($today);
             $end = $dateFactory->getEndOfMonth($today);
-            $statistics = $this->getBudgetStatistic($monthly, $begin, $end);
+            $statistics = $this->getBudgetStatistic($monthly, $begin, $end, $user);
             foreach ($statistics as $id => $statistic) {
                 $models[$id]->setStatistic($statistic);
             }
@@ -252,7 +253,7 @@ class ProjectStatisticService
 
         if (\count($allTime) > 0) {
             // display the budget at the end of the selected period and not the total sum of all times (do not include times in the future)
-            $statistics = $this->getBudgetStatistic($allTime, null, $today);
+            $statistics = $this->getBudgetStatistic($allTime, null, $today, $user);
             foreach ($statistics as $id => $statistic) {
                 $models[$id]->setStatistic($statistic);
             }
@@ -296,7 +297,7 @@ class ProjectStatisticService
      * @param Project[] $projects
      * @return array<int, ProjectStatistic>
      */
-    public function getBudgetStatistic(array $projects, ?DateTimeInterface $begin = null, ?DateTimeInterface $end = null): array
+    public function getBudgetStatistic(array $projects, ?DateTimeInterface $begin = null, ?DateTimeInterface $end = null, ?User $user = null): array
     {
         $statistics = [];
         foreach ($projects as $project) {
@@ -319,6 +320,11 @@ class ProjectStatisticService
             ->addGroupBy('exported')
             ->setParameter('project', array_keys($statistics))
         ;
+
+        // only what one person booked
+        if ($user !== null) {
+            $qb->andWhere('t.user = :statUser')->setParameter('statUser', $user);
+        }
 
         if ($begin !== null) {
             $qb

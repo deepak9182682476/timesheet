@@ -82,6 +82,7 @@ final class UserTeamProjects extends AbstractWidget
             }
         }
 
-        return $this->statisticService->getBudgetStatisticModelForProjects($projects, $now);
+        // "My projects": the bar shows the hours the logged-in person booked on each project, not the whole team's
+        return $this->statisticService->getBudgetStatisticModelForProjects($projects, $now, $user);
     }
 }

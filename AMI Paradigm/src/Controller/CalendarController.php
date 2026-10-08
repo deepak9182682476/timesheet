@@ -97,7 +97,7 @@ final class CalendarController extends AbstractController
             }
         }
 
-        $page = new PageSetup('calendar');
+        $page = new PageSetup('Calendar Entry');
         $page->setHelp('calendar.html');
 
         return $this->render('calendar/user.html.twig', [

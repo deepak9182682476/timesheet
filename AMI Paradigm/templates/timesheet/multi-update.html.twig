@@ -26,10 +26,12 @@
                 {{ form_row(form.replaceDescription) }}
                 {{ form_row(form.description) }}
             </fieldset>
+            {# Tags are hidden for now: remove this comment to bring them back (and the lines in TimesheetMultiUpdate.php)
             <fieldset class="form-fieldset pb-0 h-100">
                 {{ form_row(form.replaceTags) }}
                 {{ form_row(form.tags) }}
             </fieldset>
+            #}
             {% if form.user is defined %}
                 <fieldset class="form-fieldset pb-0">
                     {{ form_row(form.user) }}

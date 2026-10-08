@@ -9,11 +9,20 @@
     <li>
         {# highlight the person who is logged in #}
         {% set isMe = app.user is not null and app.user.id == user.id %}
-        <div class="org-person{% if isMe %} org-me{% endif %}"{% if isMe %} role="button" tabindex="0" title="Show this team's projects"{% endif %}>
+        {# the logged-in person gets a coloured outline (earlier their box was filled and could be clicked to show the team's projects) #}
+        {# pointing at a person shows both roles: the one the administrator gave (system) and the one in this team (Team Mapping) #}
+        {% set systemRole = widgets.user_role_name(user)|trim %}
+        {% set hover = 'Role in the system: ' ~ systemRole ~ (member.teamRole is not empty ? ' · Role in this team: ' ~ member.teamRole : '') %}
+        <div class="org-person{% if isMe %} org-me{% endif %}" title="{{ hover }}" data-bs-toggle="tooltip">
             {{ widgets.user_avatar(user, false, 'avatar-rounded avatar-sm') }}
             <span class="org-text">
                 <span class="org-name">{{ user.displayName }}</span>
-                {% if user.title is not empty %}<span class="org-title">{{ user.title }}</span>{% endif %}
+                {# what the person does in this team; earlier the job title of the profile was shown here #}
+                {% if member.teamRole is not empty %}
+                    <span class="org-title">{{ member.teamRole }}</span>
+                {% elseif user.title is not empty %}
+                    <span class="org-title">{{ user.title }}</span>
+                {% endif %}
             </span>
         </div>
         {% if reports is not empty and depth < 12 %}
@@ -88,7 +97,9 @@
 {% endif %}
 <style>
     .org-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
-    .org-tabs .nav-link { white-space: nowrap; }
+    .org-tabs .nav-link { white-space: nowrap; color: var(--tblr-secondary); }
+    /* the selected team stands out: bold, in the primary colour, underlined */
+    .org-tabs .nav-link.active { color: var(--tblr-primary); font-weight: 600; border-color: var(--tblr-border-color) var(--tblr-border-color) var(--tblr-bg-surface); box-shadow: inset 0 -3px 0 var(--tblr-primary); }
     .org-chart-wrapper { position: relative; padding: 1.25rem 1rem 1rem; overflow-x: auto; text-align: center; }
     .org-edit { position: absolute; top: .5rem; right: .75rem; color: var(--tblr-secondary); }
     .org-hint { margin-top: .75rem; font-size: .8125rem; }
@@ -98,15 +109,13 @@
     .org-person { display: inline-flex; align-items: center; gap: .5rem; padding: .375rem .75rem .375rem .5rem; border: 1px solid var(--tblr-border-color); border-radius: var(--tblr-border-radius); background: var(--tblr-bg-surface); }
     .org-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
     .org-name { font-weight: 600; white-space: nowrap; }
-    .org-person.org-me { border-color: var(--tblr-primary); background: var(--tblr-primary-lt, rgba(32, 107, 196, .1)); box-shadow: 0 0 0 1px var(--tblr-primary); }
-    .org-person.org-me .org-name { color: var(--tblr-primary); }
-    .org-person.org-me { cursor: pointer; }
-    .org-person.org-me.org-filtering { background: var(--tblr-primary); }
-    .org-person.org-me.org-filtering .org-name, .org-person.org-me.org-filtering .org-title { color: var(--tblr-primary-fg, #fff); }
-    /* hidden until a team is picked (see script below) */
-    #UserTeamProjects:not(.team-projects-open) { display: none; }
-    .team-project-filter { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .5rem 1rem; font-size: .8125rem; background: var(--tblr-primary-lt, rgba(32, 107, 196, .1)); border-bottom: 1px solid var(--tblr-border-color); }
+    /* the person who is logged in: an outline only, the box itself stays white */
+    .org-person.org-me { border: 2px solid var(--tblr-primary); }
     .org-title { font-size: .75rem; color: var(--tblr-secondary); white-space: nowrap; }
+    /* "My projects": the projects of the selected team are marked */
+    #UserTeamProjects tr[data-project].team-highlight > td { background: var(--tblr-primary-lt, rgba(32, 107, 196, .08)); }
+    #UserTeamProjects tr[data-project].team-highlight > td:first-child { box-shadow: inset 3px 0 0 var(--tblr-primary); }
+    .team-project-filter { padding: .5rem 1rem; font-size: .8125rem; color: var(--tblr-secondary); border-bottom: 1px solid var(--tblr-border-color); }
     /* connector lines: only below the top row */
     .org-chart ul > li { padding-top: 1.25rem; }
     .org-chart ul > li::before { content: ''; position: absolute; top: 0; left: 0; right: 0; border-top: 1px solid var(--tblr-border-color-dark, var(--tblr-border-color)); }
@@ -117,10 +126,11 @@
     .org-chart ul::before { content: ''; position: absolute; top: 0; left: 50%; height: 1.25rem; border-left: 1px solid var(--tblr-border-color-dark, var(--tblr-border-color)); }
 </style>
 <script type="text/javascript">
-    /* "My projects" stays hidden until you click your own box in a team's chart; it then opens with that team's projects only. Clicking the box again, or "Close", hides it. */
+    /* "My projects" always lists all projects. The projects of the team selected in "My teams" are highlighted there.
+       (Earlier "My projects" stayed hidden until you clicked your own box, and then showed that team's projects only.) */
     (function () {
-        if (window.__teamProjectFilter) { return; }
-        window.__teamProjectFilter = true;
+        if (window.__teamProjectHighlight) { return; }
+        window.__teamProjectHighlight = true;
 
         function projectsBox() {
             var box = document.getElementById('UserTeamProjects');
@@ -138,58 +148,41 @@
             return box;
         }
 
-        function clearFilter() {
+        function highlight(pane) {
             var box = projectsBox();
-            document.querySelectorAll('.org-person.org-filtering').forEach(function (el) { el.classList.remove('org-filtering'); });
-            if (box === null) { return; }
-            box.querySelectorAll('tr[data-project]').forEach(function (row) { row.style.display = ''; });
-            box.querySelectorAll('.team-project-filter').forEach(function (el) { el.remove(); });
-            box.classList.remove('team-projects-open');
-        }
-
-        function applyFilter(person) {
-            var pane = person.closest('.tab-pane');
-            var box = projectsBox();
-            if (pane === null || box === null) { return; }
+            if (box === null || pane === null) { return; }
             var ids = (pane.dataset.teamProjects || '').split(',').filter(function (id) { return id !== ''; });
-            var visible = 0;
-            clearFilter();
+            var count = 0;
             box.querySelectorAll('tr[data-project]').forEach(function (row) {
-                var show = ids.indexOf(row.dataset.project) !== -1;
-                row.style.display = show ? '' : 'none';
-                if (show) { visible++; }
+                var mine = ids.indexOf(row.dataset.project) !== -1;
+                row.classList.toggle('team-highlight', mine);
+                if (mine) { count++; }
             });
-
-            var bar = document.createElement('div');
-            bar.className = 'team-project-filter';
-            var label = document.createElement('span');
-            label.textContent = visible > 0 ? ('Projects for ' + pane.dataset.teamName) : ('No projects for ' + pane.dataset.teamName);
-            var all = document.createElement('a');
-            all.href = '#';
-            all.textContent = 'Close';
-            all.addEventListener('click', function (event) { event.preventDefault(); clearFilter(); });
-            bar.appendChild(label);
-            bar.appendChild(all);
+            var bar = box.querySelector('.team-project-filter');
             var table = box.querySelector('table');
-            if (table !== null) { table.parentNode.insertBefore(bar, table); }
-
-            box.classList.add('team-projects-open');
-            person.classList.add('org-filtering');
-            box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            if (bar === null && table !== null) {
+                bar = document.createElement('div');
+                bar.className = 'team-project-filter';
+                table.parentNode.insertBefore(bar, table);
+            }
+            if (bar !== null) {
+                bar.textContent = count > 0 ? ('Projects of ' + pane.dataset.teamName + ' are highlighted') : ('No projects for ' + pane.dataset.teamName);
+            }
         }
 
-        function toggle(person) {
-            if (person.classList.contains('org-filtering')) { clearFilter(); } else { applyFilter(person); }
+        function start() {
+            highlight(document.querySelector('.org-tabs ~ .tab-content .tab-pane.active'));
+            document.querySelectorAll('.org-tabs [data-bs-toggle="tab"]').forEach(function (tab) {
+                tab.addEventListener('shown.bs.tab', function () {
+                    highlight(document.querySelector(tab.getAttribute('href')));
+                });
+            });
         }
 
-        document.addEventListener('click', function (event) {
-            var person = event.target.closest ? event.target.closest('.org-person.org-me') : null;
-            if (person !== null) { toggle(person); }
-        });
-        document.addEventListener('keydown', function (event) {
-            if (event.key !== 'Enter' && event.key !== ' ') { return; }
-            var person = event.target.closest ? event.target.closest('.org-person.org-me') : null;
-            if (person !== null) { event.preventDefault(); toggle(person); }
-        });
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start);
+        } else {
+            start();
+        }
     })();
 </script>
