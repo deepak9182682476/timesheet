@@ -37,6 +37,8 @@ use OpenSpout\Writer\XLSX\Writer;
 final class WorkItemImportService
 {
     public const ASSIGNED = 'Assigned to';
+    /** optional last column: how long the last item of the row should take (free text) */
+    public const ESTIMATE = 'Estimated Time';
     public const CLEAR = '-';
     public const MAX_ROWS = 20000;
 
@@ -56,7 +58,8 @@ final class WorkItemImportService
     {
         // no "Assigned to" column any more: everything of a project is for all the people in its teams (Team Mapping)
         // return array_merge($this->models->getLevels($project), [self::ASSIGNED]);
-        return $this->models->getLevels($project);
+        // return $this->models->getLevels($project);
+        return array_merge($this->models->getLevels($project), [self::ESTIMATE]);
     }
 
     /**
@@ -87,6 +90,7 @@ final class WorkItemImportService
                         $cells[$level] = (string) $step->getName();
                     }
                 }
+                $cells[] = (string) $item->getEstimate();
                 // $people = [];
                 // foreach ($item->getUsers() as $person) {
                 //     $people[] = $person->getUserIdentifier();
@@ -109,6 +113,7 @@ final class WorkItemImportService
             // '"' . self::ASSIGNED . '" left empty changes nothing. A single "' . self::CLEAR . '" takes everybody off the item.',
             'Everything in the file is for all the people in the project\'s teams (Team Allocation). Nothing is assigned to single people.',
             'A row can stop early, for example a row with only the ' . $levels[0] . '.',
+            '"' . self::ESTIMATE . '" is optional: how long the last item of the row should take, as free text (for example "16 hours" or "2 days"). Left empty, an estimate already there is kept.',
             'Items that exist already are found by their name, so the file can be uploaded again after a correction.',
             // 'To change who things are assigned to later: download the current mapping, change "' . self::ASSIGNED . '" in Excel and upload the file again.',
             'Nothing is ever deleted by an upload. Items are deleted on the "Task Creation" page.',
@@ -168,10 +173,10 @@ final class WorkItemImportService
         //     array_merge($path('Second'), ['Development', 'Build the API', $me . ', second.username']),
         // ];
         return [
-            array_merge($path('First'), ['Development', 'Build the screen']),
-            array_merge($path('First'), ['Development', 'Write the tests']),
-            array_merge($path('First'), ['Testing', 'Run the tests']),
-            array_merge($path('Second'), ['Development', 'Build the API']),
+            array_merge($path('First'), ['Development', 'Build the screen', '16 hours']),
+            array_merge($path('First'), ['Development', 'Write the tests', '8 hours']),
+            array_merge($path('First'), ['Testing', 'Run the tests', '1 day']),
+            array_merge($path('Second'), ['Development', 'Build the API', '']),
         ];
     }
 
@@ -191,7 +196,7 @@ final class WorkItemImportService
 
         $rows = $this->readRows($path, $levels);
         if ($rows === null) {
-            $wanted = 'This project is ' . $this->models->getModelName($project) . ', so the first row has to hold the column names: ' . implode(', ', $this->getHeaders($project)) . '. Please use the template of this project.';
+            $wanted = 'This project is ' . $this->models->getModelName($project) . ', so the first row has to hold the column names: ' . implode(', ', $levels) . ' (and, if wanted, ' . self::ESTIMATE . '). Please use the template of this project.';
             // a file made for another model is the usual reason: say so
             $other = $this->guessModel($project);
             $result['errors'][1] = [$other !== null ? 'This is a file for ' . $other . ' projects. ' . $wanted : $wanted];
@@ -324,6 +329,12 @@ final class WorkItemImportService
                 $result['existing']++;
             }
 
+            // the estimate is for the last item of the row; an empty cell keeps what is there
+            if ($parent !== null && ($row['estimate'] ?? '') !== '' && $parent->getEstimate() !== $row['estimate']) {
+                $parent->setEstimate($row['estimate']);
+                $this->entityManager->persist($parent);
+            }
+
             if ($assign !== null && $parent !== null) {
                 $before = [];
                 foreach ($parent->getUsers() as $person) {
@@ -379,7 +390,7 @@ final class WorkItemImportService
      * The rows of the first sheet, by Excel row number. Null when the first row does not hold the column names.
      *
      * @param array<int, string> $levels
-     * @return array<int, array{names: array<int, string>, assigned: string}>|null
+     * @return array<int, array{names: array<int, string>, assigned: string, estimate: string}>|null
      */
     private function readRows(string $path, array $levels): ?array
     {
@@ -389,6 +400,7 @@ final class WorkItemImportService
         $rows = [];
         $columns = null;
         $assigned = null;
+        $estimate = null;
         try {
             foreach ($reader->getSheetIterator() as $sheet) {
                 $line = 0;
@@ -412,6 +424,9 @@ final class WorkItemImportService
                             if ($this->same($title, self::ASSIGNED)) {
                                 $assigned = $index;
                             }
+                            if ($this->same($title, self::ESTIMATE)) {
+                                $estimate = $index;
+                            }
                         }
                         if (\count($columns) !== \count($levels)) {
                             return null;
@@ -430,8 +445,9 @@ final class WorkItemImportService
                     // an "Assigned to" column of an older file is not used any more
                     // $people = $assigned !== null ? $this->text($cells[$assigned] ?? '') : '';
                     $people = '';
+                    $time = $estimate !== null ? mb_substr($this->text($cells[$estimate] ?? ''), 0, 100) : '';
                     if (!$empty || $people !== '') {
-                        $rows[$line] = ['names' => $names, 'assigned' => $people];
+                        $rows[$line] = ['names' => $names, 'assigned' => $people, 'estimate' => $time];
                     }
                 }
                 break; // only the first sheet holds the mapping

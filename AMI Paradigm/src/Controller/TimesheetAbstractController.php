@@ -46,7 +46,8 @@ use Symfony\Component\HttpFoundation\Response;
 abstract class TimesheetAbstractController extends AbstractController
 {
     /** the list tab for Agile and Waterfall projects together */
-    private const VIEW_PROJECT = 'project';
+    // private const VIEW_PROJECT = 'project';
+    protected const VIEW_PROJECT = 'project';
 
     public function __construct(
         protected readonly TimesheetRepository $repository,
@@ -109,6 +110,45 @@ abstract class TimesheetAbstractController extends AbstractController
             }
             // no project of this kind: an ID that does not exist keeps the list empty
             $listQuery->setProjects($wanted !== [] ? $wanted : [0]);
+        }
+
+        // Team Dashboard: on the "Project" tab one project can be picked (see TimesheetTeamController).
+        // The choice is kept while paging.
+        $projectChoices = $this->getProjectChoices($query, $view);
+        $chosenProject = null;
+        $chosenProjectId = null;
+        if ($projectChoices !== []) {
+            $projectKey = 'timesheet_project_' . $route;
+            $pick = $request->query->has('project_id') ? $request->query->getInt('project_id') : (int) $session->get($projectKey, 0);
+            // if (!isset($projectChoices[$pick])) {
+            //     $pick = 0;
+            // }
+            // there is no "All Projects" any more: without a choice the first project is shown
+            if (!isset($projectChoices[$pick])) {
+                $pick = (int) array_key_first($projectChoices);
+            }
+            $session->set($projectKey, $pick);
+            if ($pick !== 0) {
+                $chosenProject = $projectChoices[$pick];
+                $chosenProjectId = $pick;
+                $listQuery = clone $query;
+                $listQuery->setProjects([$pick]);
+            }
+        }
+        // the Pre-Sales and Non-Project tabs are one project each: the same charts as a picked project
+        if ($chosenProject === null && ($single = $this->getViewProject($view)) !== null) {
+            [$chosenProjectId, $chosenProject] = $single;
+        }
+        $summary = $this->getListSummary($listQuery, $view, $chosenProject);
+
+        // With charts above the list, the entries are only shown after "View All Entries" (per tab and project).
+        $showEntries = true;
+        if ($summary !== null) {
+            $entriesKey = 'timesheet_entries_' . $route . '_' . $view . '_' . ($chosenProjectId ?? 0);
+            if ($request->query->has('entries')) {
+                $session->set($entriesKey, $request->query->getBoolean('entries'));
+            }
+            $showEntries = (bool) $session->get($entriesKey, false);
         }
 
         $result = $this->repository->getTimesheetResult($listQuery);
@@ -221,7 +261,42 @@ abstract class TimesheetAbstractController extends AbstractController
             'listView' => $view,
             'listRoute' => $route,
             'projectModels' => $this->workModels->getProjectModels(),
+            'project_choices' => $projectChoices,
+            'chosen_project' => $chosenProject,
+            'chosen_project_id' => $chosenProjectId,
+            'show_entries' => $showEntries,
+            'summary' => $summary,
         ]);
+    }
+
+    /**
+     * The projects that can be picked on a tab of the list, keyed by ID (none by default).
+     *
+     * @return array<int, string> project names keyed by ID
+     */
+    protected function getProjectChoices(TimesheetQuery $query, string $view): array
+    {
+        return [];
+    }
+
+    /**
+     * The one project a tab stands for, as [ID, name] (none by default), see TimesheetTeamController.
+     *
+     * @return array{0: int, 1: string}|null
+     */
+    protected function getViewProject(string $view): ?array
+    {
+        return null;
+    }
+
+    /**
+     * Charts shown above the list (none by default), see TimesheetTeamController.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function getListSummary(TimesheetQuery $listQuery, string $view, ?string $project): ?array
+    {
+        return null;
     }
 
     /**
@@ -266,7 +341,7 @@ abstract class TimesheetAbstractController extends AbstractController
      *
      * @return array<int>
      */
-    private function getViewProjectIds(string $view): array
+    protected function getViewProjectIds(string $view): array
     {
         $models = $view === self::VIEW_PROJECT ? [WorkModelService::AGILE, WorkModelService::WATERFALL] : [$view];
         $ids = [];

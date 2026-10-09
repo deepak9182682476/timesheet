@@ -13,7 +13,46 @@
             {% endfor %}
         </ul>
     {% endif %}
+
+    {# Team Dashboard, "Project" tab: the projects to pick from (see TimesheetTeamController::getProjectChoices) #}
+    {% if project_choices is defined and project_choices is not empty %}
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3 team-project-choices">
+            {# no "All Projects": the tab always shows one project
+            <a href="{{ path(listRoute, {'view': listView, 'project_id': 0}) }}" class="btn btn-sm {{ chosen_project is null ? 'btn-primary' : 'btn-outline-secondary' }}">All Projects</a> #}
+            {% for id, name in project_choices %}
+                <a href="{{ path(listRoute, {'view': listView, 'project_id': id}) }}" class="btn btn-sm {{ chosen_project_id == id ? 'btn-primary' : 'btn-outline-secondary' }}">{{ name }}</a>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {# pie charts and the export box (Team Dashboard) #}
+    {% if summary is defined and summary is not null %}
+        {{ include('timesheet/_team_summary.html.twig') }}
+    {% endif %}
+
+    {% if summary is defined and summary is not null %}
+        {# with charts above, the entries are shown on request #}
+        {% set toggleParams = {'view': listView}|merge(listView == 'project' and chosen_project_id is not null ? {'project_id': chosen_project_id} : {}) %}
+        <div class="d-flex align-items-center mb-3">
+            {% if show_entries %}
+                <a href="{{ path(listRoute, toggleParams|merge({'entries': 0})) }}" class="btn"><i class="fas fa-eye-slash me-2"></i>Hide Entries</a>
+            {% else %}
+                <a href="{{ path(listRoute, toggleParams|merge({'entries': 1})) }}" class="btn btn-primary"><i class="fas fa-list me-2"></i>View All Entries{% if chosen_project is not null %} of {{ chosen_project }}{% endif %}</a>
+            {% endif %}
+        </div>
+        {% if show_entries %}
+            {{ parent() }}
+        {% endif %}
+    {% else %}
+        {{ parent() }}
+    {% endif %}
+{% endblock %}
+
+{% block head %}
     {{ parent() }}
+    {% if summary is defined and summary is not null %}
+        {{ encore_entry_script_tags('chart') }}
+    {% endif %}
 {% endblock %}
 
 {% block datatable_outer %}

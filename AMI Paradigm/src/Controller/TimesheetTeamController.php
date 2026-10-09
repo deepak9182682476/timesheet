@@ -295,4 +295,187 @@ final class TimesheetTeamController extends TimesheetAbstractController
 
         return $page;
     }
+
+    /**
+     * "Project" tab: the projects the logged-in person works with (Task Creation) and the ones their people logged
+     * time on, by name (Pre-Sales and Non-Project Activities have their own tabs).
+     *
+     * @return array<int, string> project names keyed by ID
+     */
+    protected function getProjectChoices(TimesheetQuery $query, string $view): array
+    {
+        if ($view !== self::VIEW_PROJECT) {
+            return [];
+        }
+
+        $presales = $this->workModels->getPresalesProject(false);
+        $nonProject = $this->workModels->getNonProject();
+        $special = array_filter([$presales?->getId(), $nonProject?->getId()]);
+
+        $projects = [];
+        foreach ($this->workModels->getManageableProjects($this->getUser()) as $project) {
+            if (!\in_array($project->getId(), $special, true)) {
+                $projects[(int) $project->getId()] = (string) $project->getName();
+            }
+        }
+
+        // the projects of this tab the team logged time on
+        $logged = clone $query;
+        $logged->setProjects($this->getViewProjectIds(self::VIEW_PROJECT) ?: [0]);
+        foreach ($this->repository->getDurationsGroupedBy($logged, 'project') as $row) {
+            if ($row['key'] !== null && !\in_array((int) $row['key'], $special, true)) {
+                $projects[(int) $row['key']] ??= $row['label'];
+            }
+        }
+        uasort($projects, static fn ($a, $b) => strcasecmp($a, $b));
+
+        // Pre-Sales and Non-Project Activities have their own tabs, so they are not offered here
+        // if ($presales !== null) {
+        //     $projects[(int) $presales->getId()] = (string) $presales->getName();
+        // }
+        // if ($nonProject !== null) {
+        //     $projects[(int) $nonProject->getId()] = (string) $nonProject->getName();
+        // }
+
+        return $projects;
+    }
+
+    /**
+     * Team Dashboard always has its tabs, even before anybody logged time on that kind of work:
+     * All, Project, Non-Project and, beside it, Pre-Sales (earlier only the kinds in use were shown).
+     *
+     * @return array<string, string>
+     */
+    protected function getListViews(TimesheetQuery $query): array
+    {
+        $views = [self::VIEW_PROJECT => 'Project', \App\WorkModel\WorkModelService::NON_PROJECT => 'Non-Project'];
+        if ($this->workModels->getPresalesProject(false) !== null) {
+            $views[\App\WorkModel\WorkModelService::PRESALES] = 'Pre-Sales';
+        }
+
+        return $views;
+    }
+
+    /**
+     * Pre-Sales and Non-Project tabs: their project gets the same charts and export box as a picked project.
+     */
+    protected function getViewProject(string $view): ?array
+    {
+        $project = match ($view) {
+            \App\WorkModel\WorkModelService::PRESALES => $this->workModels->getPresalesProject(false),
+            \App\WorkModel\WorkModelService::NON_PROJECT => $this->workModels->getNonProject(),
+            default => null,
+        };
+
+        return $project !== null ? [(int) $project->getId(), (string) $project->getName()] : null;
+    }
+
+    /**
+     * The charts above Team Dashboard:
+     * - "All": one pie of all hours, split into projects, Pre-Sales and non-project activities
+     * - a project picked on the "Project" tab: its hours per person, per activity and per task
+     * Each comes with the export box (time range, user, team; the project is fixed).
+     */
+    protected function getListSummary(TimesheetQuery $listQuery, string $view, ?string $project): ?array
+    {
+        if ($view !== 'all' && $project === null) {
+            return null;
+        }
+
+        $toPie = static function (array $rows, string $empty): array {
+            $slices = [];
+            foreach ($rows as $row) {
+                if ($row['seconds'] <= 0) {
+                    continue;
+                }
+                $slices[] = ['label' => $row['label'] !== '' ? $row['label'] : $empty, 'seconds' => $row['seconds']];
+            }
+            usort($slices, static fn ($a, $b) => $b['seconds'] <=> $a['seconds']);
+
+            return $slices;
+        };
+
+        $charts = [];
+        if ($project === null) {
+            $presalesId = $this->workModels->getPresalesProject(false)?->getId();
+            $nonProjectId = $this->workModels->getNonProject()?->getId();
+            $parts = ['Projects' => 0, 'Pre-Sales' => 0, 'Non-Project Activities' => 0];
+            foreach ($this->repository->getDurationsGroupedBy($listQuery, 'project') as $row) {
+                $id = (int) $row['key'];
+                $part = $id === $presalesId ? 'Pre-Sales' : ($id === $nonProjectId ? 'Non-Project Activities' : 'Projects');
+                $parts[$part] += $row['seconds'];
+            }
+            $slices = [];
+            foreach ($parts as $label => $seconds) {
+                $slices[] = ['label' => $label, 'seconds' => $seconds];
+            }
+            $charts[] = ['title' => 'Total Hours', 'slices' => $slices, 'colors' => ['#206bc4', '#f59f00', '#2fb344']];
+        } else {
+            $charts[] = ['title' => 'Total Hours on ' . $project, 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'user'), 'Unknown'), 'colors' => null];
+            $charts[] = ['title' => 'Hours by Activity', 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'activity'), 'No activity'), 'colors' => null];
+            $charts[] = ['title' => 'Hours by Task', 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'task'), 'No task'), 'colors' => null];
+        }
+
+        foreach ($charts as $index => $chart) {
+            $charts[$index]['total'] = array_sum(array_column($chart['slices'], 'seconds'));
+        }
+
+        // The team of the export: on a project of the "Project" tab it is the project's own teams (Team Allocation),
+        // on "All" every team; neither is shown. Non-Project and Pre-Sales are shared by everybody: there it is chosen.
+        $showTeam = \in_array($view, [\App\WorkModel\WorkModelService::NON_PROJECT, \App\WorkModel\WorkModelService::PRESALES], true);
+        $exportTeams = [];
+        if ($view === self::VIEW_PROJECT && $project !== null) {
+            $projectId = $this->getChosenProjectId($project);
+            $exportTeams = $projectId !== null ? $this->workModels->getProjectTeamIds($projectId) : [];
+        }
+
+        return [
+            'project' => $project,
+            'show_team' => $showTeam,
+            'export_teams' => $exportTeams,
+            'charts' => $charts,
+            'export_form' => $this->isGranted('create_export') ? $this->createExportBoxForm()->createView() : null,
+        ];
+    }
+
+    /**
+     * The ID of the project picked on the "Project" tab, by its name (as kept in the session by the list).
+     */
+    private function getChosenProjectId(string $name): ?int
+    {
+        $id = $this->container->get('request_stack')->getCurrentRequest()?->getSession()->get('timesheet_project_admin_timesheet');
+        if (\is_int($id) || ctype_digit((string) $id)) {
+            return (int) $id;
+        }
+
+        return null;
+    }
+
+    /**
+     * The fields of the export box, the same as on the Export page (time range, user, team, project), under their own
+     * name so they do not clash with the search form of the list.
+     */
+    private function createExportBoxForm(): FormInterface
+    {
+        $user = $this->getUser();
+        $query = new \App\Repository\Query\ExportQuery();
+        $query->setBegin($this->getDateTimeFactory()->getStartOfMonth());
+        $query->setEnd($this->getDateTimeFactory()->getEndOfMonth());
+        $query->setCurrentUser($user);
+
+        $teamUsers = null;
+        if (!$user->isAdmin() && !$user->isSuperAdmin()) {
+            $teamUsers = $this->workModels->getAssignableUsers($user);
+            $teamUsers = $teamUsers !== [] ? $teamUsers : [$user];
+        }
+
+        return $this->container->get('form.factory')->createNamed('team_export', \App\Form\Toolbar\ExportToolbarForm::class, $query, [
+            'method' => 'GET',
+            'csrf_protection' => false,
+            'include_user' => true,
+            'include_export' => false,
+            'team_users' => $teamUsers,
+            'timezone' => $this->getDateTimeFactory()->getTimezone()->getName(),
+        ]);
+    }
 }

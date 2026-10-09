@@ -23,6 +23,7 @@
                 </div>
             {% endfor %}
             {% if form.names is defined %}{{ form_row(form.names) }}{% else %}{{ form_row(form.name) }}{% endif %}
+            {{ form_row(form.estimate) }}
             {# {{ form_row(form.users) }} - nothing is assigned to single people any more #}
             {{ form_rest(form) }}
         {% endblock %}

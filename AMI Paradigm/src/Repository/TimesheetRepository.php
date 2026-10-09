@@ -591,6 +591,50 @@ class TimesheetRepository extends EntityRepository
     }
 
     /**
+     * The hours of the entries a list shows (same filters as the list, all pages), added up per
+     * project, activity, person or task (the "task" custom field). Used for the pie charts of Team Log Time.
+     *
+     * @param 'project'|'activity'|'user'|'task' $by
+     * @return array<int, array{key: string|int|null, label: string, seconds: int}>
+     */
+    public function getDurationsGroupedBy(TimesheetQuery $query, string $by): array
+    {
+        $qb = $this->getQueryBuilderForQuery(clone $query);
+        $qb->resetDQLPart('orderBy');
+        $qb->setFirstResult(0);
+        $qb->setMaxResults(null);
+
+        switch ($by) {
+            case 'task':
+                $qb->leftJoin(TimesheetMeta::class, 'gm', 'WITH', 'gm.timesheet = t AND gm.name = :gm_name')
+                    ->setParameter('gm_name', \App\Entity\Task::TIMESHEET_META_FIELD)
+                    ->select('gm.value AS gkey, gm.value AS glabel')
+                    ->groupBy('gm.value');
+                break;
+            case 'project':
+                $qb->leftJoin('t.project', 'gp')->select('gp.id AS gkey, gp.name AS glabel')->groupBy('gp.id');
+                break;
+            case 'activity':
+                $qb->leftJoin('t.activity', 'ga')->select('ga.id AS gkey, ga.name AS glabel')->groupBy('ga.id');
+                break;
+            case 'user':
+                // the shown name of a person is the alias, or else the username
+                $qb->leftJoin('t.user', 'gu')->select('gu.id AS gkey, COALESCE(gu.alias, gu.username) AS glabel')->groupBy('gu.id');
+                break;
+            default:
+                throw new \InvalidArgumentException('Unknown grouping: ' . $by);
+        }
+        $qb->addSelect('COALESCE(SUM(t.duration), 0) AS seconds');
+
+        $rows = [];
+        foreach ($qb->getQuery()->getArrayResult() as $row) {
+            $rows[] = ['key' => $row['gkey'], 'label' => (string) ($row['glabel'] ?? ''), 'seconds' => (int) $row['seconds']];
+        }
+
+        return $rows;
+    }
+
+    /**
      * @return Timesheet[]
      */
     private function getHydratedResultsByQuery(QueryBuilder $qb, ?TimesheetQuery $timesheetQuery = null): array

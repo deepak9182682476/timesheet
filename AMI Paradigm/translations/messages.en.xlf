@@ -200,7 +200,7 @@
       </trans-unit>
       <trans-unit id="yxQop43" resname="all_times">
         <source>all_times</source>
-        <target>Team Log Time</target>
+        <target>Team Dashboard</target>
       </trans-unit>
       <trans-unit id="IeshU90" resname="customers">
         <source>customers</source>

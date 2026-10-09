@@ -127,6 +127,39 @@ final class ExportController extends AbstractController
         ]);
     }
 
+    /**
+     * How many entries an export would hold and their hours, for the export box of Team Log Time:
+     * it asks this first and then offers CSV, PDF, Excel and Print.
+     */
+    #[Route(path: '/count', name: 'export_count', methods: ['GET'])]
+    public function count(Request $request): \Symfony\Component\HttpFoundation\JsonResponse
+    {
+        $query = $this->getDefaultQuery();
+        $form = $this->getToolbarForm($query, 'GET');
+        $form->submit($request->query->all(), false);
+        if (!$form->isValid()) {
+            $problems = [];
+            foreach ($form->getErrors(true) as $error) {
+                $problems[] = $error->getMessage();
+            }
+
+            return $this->json(['error' => $problems !== [] ? implode(' ', array_unique($problems)) : 'Please check the filters.'], 400);
+        }
+
+        try {
+            $entries = $this->getEntries($query);
+        } catch (TooManyItemsExportException) {
+            return $this->json(['error' => 'Too many entries for one export. Please choose a shorter time range.'], 400);
+        }
+
+        $seconds = 0;
+        foreach ($entries as $entry) {
+            $seconds += $entry->getDuration() ?? 0;
+        }
+
+        return $this->json(['count' => \count($entries), 'seconds' => $seconds]);
+    }
+
     #[Route(path: '/data', name: 'export_data', methods: ['POST'])]
     public function export(Request $request, SystemConfiguration $systemConfiguration): Response
     {

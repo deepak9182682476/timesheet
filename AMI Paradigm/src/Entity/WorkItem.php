@@ -66,6 +66,11 @@ class WorkItem
     #[ORM\Column(name: 'position', type: Types::INTEGER, nullable: false)]
     private int $position = 0;
 
+    /** How long it should take, as the manager or lead writes it (free text, for example "16 hours" or "2 days") */
+    #[ORM\Column(name: 'estimate', type: Types::STRING, length: 100, nullable: true)]
+    #[Assert\Length(max: 100)]
+    private ?string $estimate = null;
+
     /** @var Collection<int, User> */
     #[ORM\ManyToMany(targetEntity: User::class)]
     #[ORM\JoinTable(name: 'kimai2_work_item_users')]
@@ -137,6 +142,17 @@ class WorkItem
     public function setCreatedBy(?User $createdBy): void
     {
         $this->createdBy = $createdBy;
+    }
+
+    public function getEstimate(): ?string
+    {
+        return $this->estimate;
+    }
+
+    public function setEstimate(?string $estimate): void
+    {
+        $estimate = $estimate !== null ? trim($estimate) : null;
+        $this->estimate = $estimate === '' ? null : mb_substr($estimate, 0, 100);
     }
 
     public function getPosition(): int

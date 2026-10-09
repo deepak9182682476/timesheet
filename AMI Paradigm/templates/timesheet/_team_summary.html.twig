@@ -1,0 +1,279 @@
+{#
+    Charts above Team Log Time (see TimesheetTeamController::getListSummary):
+    - "All": one pie of all hours (projects, Pre-Sales, non-project activities), total in the middle
+    - a project of the "Project" tab: hours per person, per activity and per task
+    and beside them the export box: time range, user and team (the project is fixed: all, or the picked project),
+    "Search" says how many entries there are, then CSV, PDF, Excel or Print.
+#}
+{% set charts = summary.charts %}
+{% set exportForm = summary.export_form %}
+{% set single = charts|length == 1 %}
+<div class="row row-cards mb-3 team-summary">
+    <div class="{{ exportForm is not null ? (single ? 'col-lg-7' : 'col-xl-8') : 'col-12' }}">
+        <div class="card h-100">
+            <div class="card-header">
+                <h3 class="card-title">{{ summary.project is not null ? summary.project : 'Team Hours' }}</h3>
+                <div class="card-subtitle ms-2 text-secondary small">Follows the search filters of the list below</div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% for chart in charts %}
+                        <div class="{{ single ? 'col-12' : 'col-md-4' }}">
+                            {# every pie the same size: titles take the same room, the ring a fixed square, the legend sits below it #}
+                            <div class="text-center fw-bold mb-2 team-pie-title{{ single ? '' : ' team-pie-title-multi' }}">{{ chart.title }}</div>
+                            {% if chart.total > 0 %}
+                                <div class="team-pie" style="height: {{ single ? 240 : 200 }}px">
+                                    <canvas id="team-pie-{{ loop.index }}"></canvas>
+                                    {# the total is drawn in the middle of the ring by the chart itself (see centerTotal below), so it
+                                       stays centred whatever the size of the legend; this copy is for screen readers #}
+                                    <div class="team-pie-total visually-hidden">
+                                        <div class="team-pie-value">{{ chart.total|duration }}</div>
+                                        <div class="team-pie-unit">hours</div>
+                                    </div>
+                                </div>
+                                <div class="team-pie-legend" id="team-pie-legend-{{ loop.index }}"></div>
+                            {% else %}
+                                <div class="text-secondary text-center py-5">No hours yet.</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if exportForm is not null %}
+        <div class="{{ single ? 'col-lg-5' : 'col-xl-4' }}">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h3 class="card-title"><i class="fas fa-download me-2 text-secondary"></i>Export{% if summary.project is not null %} {{ summary.project }}{% endif %}</h3>
+                </div>
+                <div class="card-body">
+                    <form id="team-export-form" onsubmit="return false;" autocomplete="off">
+                        <div class="mb-3">
+                            <label class="form-label" for="{{ exportForm.daterange.vars.id }}">Time range</label>
+                            {{ form_widget(exportForm.daterange) }}
+                        </div>
+                        {# Project: all projects, or the picked one - nothing to choose, so it is not shown #}
+                        {% if exportForm.users is defined %}
+                            <div class="mb-3">
+                                <label class="form-label" for="{{ exportForm.users.vars.id }}">User</label>
+                                {{ form_widget(exportForm.users) }}
+                            </div>
+                        {% endif %}
+                        {# Team: chosen only on Non-Project and Pre-Sales; on "All" every team, on a project its own teams #}
+                        {% if exportForm.teams is defined and summary.show_team %}
+                            <div class="mb-3">
+                                <label class="form-label" for="{{ exportForm.teams.vars.id }}">Team</label>
+                                {{ form_widget(exportForm.teams) }}
+                            </div>
+                        {% endif %}
+                        <button type="button" class="btn btn-primary w-100" id="team-export-search"><i class="fas fa-search me-2"></i>Search</button>
+                        <div id="team-export-message" class="mt-3 small"></div>
+                        <div id="team-export-buttons" class="btn-list mt-2 d-none">
+                            <button type="button" class="btn btn-outline-primary team-export-as" data-type="csv"><i class="fas fa-file-csv me-1"></i>CSV</button>
+                            <button type="button" class="btn btn-outline-primary team-export-as" data-type="pdf"><i class="fas fa-file-pdf me-1"></i>PDF</button>
+                            <button type="button" class="btn btn-outline-primary team-export-as" data-type="xlsx"><i class="fas fa-file-excel me-1"></i>Excel</button>
+                            <button type="button" class="btn btn-outline-primary team-export-as" data-type="print"><i class="fas fa-print me-1"></i>Print</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<style>
+    .team-pie { position: relative; }
+    .team-pie-title-multi { height: 3em; line-height: 1.4; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
+    .team-pie-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem .9rem; margin-top: .9rem; font-size: .8rem; color: var(--tblr-secondary); }
+    .team-pie-legend span { display: inline-flex; align-items: center; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .team-pie-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .35rem; flex: none; }
+    /* the total sits behind the (transparent) chart, so the hover box is drawn over it */
+    .team-pie canvas { position: relative; z-index: 1; }
+    /* .team-pie-total { position: absolute; z-index: 0; left: 0; right: 0; top: 0; bottom: 34px; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; } */
+    .team-pie-value { font-size: 1.35rem; font-weight: 700; line-height: 1.1; }
+    .team-pie-unit { font-size: .75rem; color: var(--tblr-secondary); }
+</style>
+<script type="text/javascript">
+    (function () {
+        var charts = {{ charts|json_encode|raw }};
+        var palette = ['#206bc4', '#f59f00', '#2fb344', '#ae3ec9', '#f76707', '#17a2b8', '#d63939', '#74b816', '#4263eb', '#d6336c', '#0ca678', '#868e96'];
+
+        function hours(seconds) {
+            var minutes = Math.round(seconds / 60);
+            return Math.floor(minutes / 60) + ':' + ('0' + (minutes % 60)).slice(-2);
+        }
+
+        function paint() {
+            if (typeof Chart === 'undefined') { return; }
+            charts.forEach(function (chart, index) {
+                var canvas = document.getElementById('team-pie-' + (index + 1));
+                if (canvas === null || chart.total <= 0) { return; }
+                // many small slices: the biggest ones, the rest together as "Others"
+                var slices = chart.slices.filter(function (slice) { return slice.seconds > 0 || chart.colors !== null; });
+                if (chart.colors === null && slices.length > 10) {
+                    var rest = slices.slice(9).reduce(function (sum, slice) { return sum + slice.seconds; }, 0);
+                    slices = slices.slice(0, 9).concat([{label: 'Others', seconds: rest}]);
+                }
+                var colors = chart.colors !== null ? chart.colors : slices.map(function (slice, i) { return palette[i % palette.length]; });
+                // the total, in the exact middle of the ring, sized to the hole
+                var centerTotal = {
+                    id: 'centerTotal',
+                    afterDatasetsDraw: function (instance) {
+                        var arc = instance.getDatasetMeta(0).data[0];
+                        if (!arc) { return; }
+                        var ctx = instance.ctx;
+                        var size = Math.max(12, Math.min(26, arc.innerRadius * 0.42));
+                        var style = getComputedStyle(document.body);
+                        var family = style.fontFamily || 'sans-serif';
+                        ctx.save();
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = style.color || '#1d273b';
+                        ctx.font = '700 ' + size + 'px ' + family;
+                        ctx.fillText(hours(chart.total), arc.x, arc.y - size * 0.3);
+                        ctx.fillStyle = '#667382';
+                        ctx.font = Math.round(size * 0.5) + 'px ' + family;
+                        ctx.fillText('hours', arc.x, arc.y + size * 0.6);
+                        ctx.restore();
+                    }
+                };
+                new Chart(canvas.getContext('2d'), {
+                    type: 'doughnut',
+                    plugins: [centerTotal],
+                    data: {
+                        // long names (tasks) are shortened in the legend; the hover box shows them in full
+                        labels: slices.map(function (slice) { return slice.label.length > 30 ? slice.label.slice(0, 28) + '\u2026' : slice.label; }),
+                        datasets: [{
+                            data: slices.map(function (slice) { return Math.round(slice.seconds / 36) / 100; }),
+                            seconds: slices.map(function (slice) { return slice.seconds; }),
+                            backgroundColor: colors,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        responsive: true,
+                        cutout: '62%',
+                        plugins: {
+                            // legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10 } },
+                            // the legend is drawn below the chart (team-pie-legend), so it does not shrink the ring
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: 'rgba(24, 36, 51, 0.97)',
+                                padding: 10,
+                                callbacks: {
+                                    label: function (item) {
+                                        function line(label, seconds) {
+                                            var share = chart.total > 0 ? Math.round(seconds * 1000 / chart.total) / 10 : 0;
+                                            return ' ' + label + ': ' + hours(seconds) + ' hours (' + share + '%)';
+                                        }
+                                        // the team total: every part at once (projects, Pre-Sales, non-project activities)
+                                        if (chart.colors !== null) {
+                                            return slices.map(function (slice) { return line(slice.label, slice.seconds); });
+                                        }
+                                        return line(slices[item.dataIndex].label, item.dataset.seconds[item.dataIndex]);
+                                    },
+                                    title: function (items) {
+                                        return chart.colors !== null ? 'Total ' + hours(chart.total) + ' hours' : (items[0] ? slices[items[0].dataIndex].label : '');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                var legend = document.getElementById('team-pie-legend-' + (index + 1));
+                if (legend !== null) {
+                    slices.forEach(function (slice, i) {
+                        var item = document.createElement('span');
+                        item.title = slice.label + ': ' + hours(slice.seconds) + ' hours';
+                        var box = document.createElement('i');
+                        box.style.backgroundColor = colors[i];
+                        item.appendChild(box);
+                        item.appendChild(document.createTextNode(slice.label.length > 30 ? slice.label.slice(0, 28) + '\u2026' : slice.label));
+                        legend.appendChild(item);
+                    });
+                }
+            });
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', paint);
+        } else {
+            paint();
+        }
+
+        // ---------------- export box
+        var form = document.getElementById('team-export-form');
+        if (form === null) { return; }
+        var project = {{ (chosen_project_id ?? null)|json_encode|raw }};
+        var exportTeams = {{ (summary.show_team ? [] : summary.export_teams)|json_encode|raw }};
+        var message = document.getElementById('team-export-message');
+        var buttons = document.getElementById('team-export-buttons');
+
+        function params() {
+            var list = [];
+            var range = form.querySelector('[name$="[daterange]"]');
+            list.push(['daterange', range !== null ? range.value : '']);
+            form.querySelectorAll('select[name$="[users][]"] option:checked').forEach(function (o) { if (o.value !== '') { list.push(['users[]', o.value]); } });
+            form.querySelectorAll('select[name$="[teams][]"] option:checked').forEach(function (o) { if (o.value !== '') { list.push(['teams[]', o.value]); } });
+            if (project !== null) { list.push(['projects[]', String(project)]); }
+            // the project's own teams (Team Allocation), when the Team field is not shown
+            exportTeams.forEach(function (id) { list.push(['teams[]', String(id)]); });
+            // every entry, exported before or not
+            list.push(['exported', '1']);
+            return list;
+        }
+
+        // any change asks for a new search before exporting
+        form.addEventListener('change', function () { buttons.classList.add('d-none'); message.textContent = ''; });
+
+        document.getElementById('team-export-search').addEventListener('click', function () {
+            var query = new URLSearchParams();
+            params().forEach(function (pair) { query.append(pair[0], pair[1]); });
+            message.className = 'mt-3 small text-secondary';
+            message.textContent = 'Searching…';
+            buttons.classList.add('d-none');
+            fetch('{{ path('export_count') }}?' + query.toString(), {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+                .then(function (response) { return response.json(); })
+                .then(function (result) {
+                    if (result.error) {
+                        message.className = 'mt-3 small text-danger';
+                        message.textContent = result.error;
+                        return;
+                    }
+                    message.className = 'mt-3 small';
+                    message.textContent = result.count === 0
+                        ? 'No entries in this time range.'
+                        : result.count + (result.count === 1 ? ' entry' : ' entries') + ', ' + hours(result.seconds) + ' hours. Export as:';
+                    if (result.count > 0) { buttons.classList.remove('d-none'); }
+                })
+                .catch(function () {
+                    message.className = 'mt-3 small text-danger';
+                    message.textContent = 'The search did not work. Please try again.';
+                });
+        });
+
+        buttons.querySelectorAll('.team-export-as').forEach(function (button) {
+            button.addEventListener('click', function () {
+                var previous = document.getElementById('team-export-post');
+                if (previous !== null) { previous.remove(); }
+                var post = document.createElement('form');
+                post.id = 'team-export-post';
+                post.method = 'POST';
+                post.action = '{{ path('export_data') }}';
+                post.target = '_blank';
+                params().concat([['renderer', button.dataset.type], ['_token', '{{ csrf_token('export.data') }}']]).forEach(function (pair) {
+                    var field = document.createElement('input');
+                    field.type = 'hidden';
+                    field.name = pair[0];
+                    field.value = pair[1];
+                    post.appendChild(field);
+                });
+                document.body.appendChild(post);
+                post.submit();
+            });
+        });
+    })();
+</script>

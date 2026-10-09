@@ -28,6 +28,7 @@
                 </div>
             </div>
         </td>
+        <td class="text-nowrap text-secondary">{% if item.estimate is not empty %}<i class="far fa-clock me-1"></i>{{ item.estimate }}{% endif %}</td>
         {# "Assigned to": nothing is assigned to single people any more (everything is for the project's teams)
         <td>
             {% if item.users is not empty %}
@@ -65,9 +66,9 @@
     </tr>
 {% else %}
     {% if flat %}
-        <tr class="wi-empty"><td colspan="2" class="text-secondary">Nothing found.</td></tr>
+        <tr class="wi-empty"><td colspan="3" class="text-secondary">Nothing found.</td></tr>
     {% endif %}
 {% endfor %}
 {% if more %}
-    <tr class="wi-empty"><td colspan="2" class="text-secondary">Only the first {{ rows|length }} are shown. Type more of the name to narrow it down.</td></tr>
+    <tr class="wi-empty"><td colspan="3" class="text-secondary">Only the first {{ rows|length }} are shown. Type more of the name to narrow it down.</td></tr>
 {% endif %}

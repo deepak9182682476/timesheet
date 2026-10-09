@@ -540,6 +540,19 @@ final class WorkModelService
         return $members;
     }
 
+    /**
+     * The teams linked to a project on Team Allocation (none: the project is open to everybody).
+     *
+     * @return array<int>
+     */
+    public function getProjectTeamIds(int $projectId): array
+    {
+        return array_map('intval', $this->entityManager->getConnection()->fetchFirstColumn(
+            'SELECT team_id FROM kimai2_projects_teams WHERE project_id = ?',
+            [$projectId]
+        ));
+    }
+
     public function isProjectMember(int $projectId, int $userId): bool
     {
         $members = $this->getProjectMembers([$projectId])[$projectId] ?? null;

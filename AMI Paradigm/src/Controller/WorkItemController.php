@@ -435,6 +435,7 @@ final class WorkItemController extends AbstractController
                     //     $candidate->addUser($assigned);
                     // }
                     $candidate->setName($name);
+                    $candidate->setEstimate($item->getEstimate());
                 }
                 if (mb_strlen($name) > 150) {
                     $field->addError(new FormError(\sprintf('"%s…" is longer than 150 characters.', mb_substr($name, 0, 30))));

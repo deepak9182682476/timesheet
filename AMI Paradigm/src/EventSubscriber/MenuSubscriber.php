@@ -115,17 +115,19 @@ final class MenuSubscriber implements EventSubscriberInterface
         // "Team members timesheets" (formerly "All times") and "Export" live here instead of under Time Tracking
         $projectTimes = new MenuItemModel('my_projects', 'my_team_projects', null, [], 'project');
 
-        if ($auth->isGranted('view_other_timesheet')) {
-            $timesheets = new MenuItemModel('timesheet_admin', 'all_times', 'admin_timesheet', [], 'timesheet-team');
-            $timesheets->setChildRoutes(['admin_timesheet_export', 'admin_timesheet_edit', 'admin_timesheet_create', 'admin_timesheet_multi_update']);
-            $projectTimes->addChild($timesheets);
-        }
+        // Team Dashboard is added last, below Task Creation (see further down)
+        // if ($auth->isGranted('view_other_timesheet')) {
+        //     $timesheets = new MenuItemModel('timesheet_admin', 'all_times', 'admin_timesheet', [], 'timesheet-team');
+        //     $timesheets->setChildRoutes(['admin_timesheet_export', 'admin_timesheet_edit', 'admin_timesheet_create', 'admin_timesheet_multi_update']);
+        //     $projectTimes->addChild($timesheets);
+        // }
 
-        if ($auth->isGranted('create_export')) {
-            $projectTimes->addChild(
-                new MenuItemModel('export', 'export', 'export', [], 'export')
-            );
-        }
+        // "Export" is hidden from the menu for everybody: Team Dashboard has its own export box
+        // if ($auth->isGranted('create_export')) {
+        //     $projectTimes->addChild(
+        //         new MenuItemModel('export', 'export', 'export', [], 'export')
+        //     );
+        // }
 
         // Project Managers and Project Leads put their teams together: projects, people and what each one does there
         if ($auth->isGranted('ROLE_TEAMLEAD')) {
@@ -143,6 +145,13 @@ final class MenuSubscriber implements EventSubscriberInterface
             $mapping = new MenuItemModel('work_items', 'Task Creation', 'work_items', [], 'fas fa-sitemap');
             $mapping->setChildRoutes(['work_items_create', 'work_items_edit']);
             $projectTimes->addChild($mapping);
+        }
+
+        // Team Dashboard, below Task Creation
+        if ($auth->isGranted('view_other_timesheet')) {
+            $timesheets = new MenuItemModel('timesheet_admin', 'all_times', 'admin_timesheet', [], 'timesheet-team');
+            $timesheets->setChildRoutes(['admin_timesheet_export', 'admin_timesheet_edit', 'admin_timesheet_create', 'admin_timesheet_multi_update']);
+            $projectTimes->addChild($timesheets);
         }
 
         if ($projectTimes->hasChildren()) {

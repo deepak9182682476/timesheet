@@ -44,6 +44,15 @@ final class WorkItemEditForm extends AbstractType
             ]);
         }
 
+        // how long it should take: free text, written by the manager or lead
+        $builder->add('estimate', TextType::class, [
+            'label' => 'Estimated Time',
+            'translation_domain' => false,
+            'required' => false,
+            'attr' => ['maxlength' => 100, 'placeholder' => 'For example: 16 hours, 2 days'],
+            'help' => $options['several'] ? 'Free text. When several are added at once, each gets this estimate.' : 'Free text, for example "16 hours" or "2 days".',
+        ]);
+
         // Nothing is assigned to single people any more: everything of a project is for all the people in its teams (Team Mapping).
         /* $builder
             ->add('users', EntityType::class, [
