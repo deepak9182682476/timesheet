@@ -47,6 +47,12 @@ final class TimesheetApprovedLeaveValidator extends ConstraintValidator
             return;
         }
 
+        // the exception: "I worked during my leave" with a reason (WorkedOnLeaveSubscriber) is saved, and marked
+        $reason = $value->getMetaField(\App\EventSubscriber\WorkedOnLeaveSubscriber::FIELD);
+        if ($reason !== null && trim((string) $reason->getValue()) !== '') {
+            return;
+        }
+
         $day = (clone $begin)->setTimezone(new \DateTimeZone($user->getTimezone()))->format('Y-m-d');
 
         try {

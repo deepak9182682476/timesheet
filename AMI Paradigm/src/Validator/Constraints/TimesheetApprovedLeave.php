@@ -21,8 +21,10 @@ final class TimesheetApprovedLeave extends TimesheetConstraint
         self::APPROVED_LEAVE_ERROR => 'The person is on approved leave on this day.',
     ];
 
-    public string $message = 'You are on approved leave on {{ date }} ({{ leave }}). Cancel that leave on the Leave page before logging time for this day.';
-    public string $messageOther = '{{ name }} is on approved leave on {{ date }} ({{ leave }}). The leave has to be cancelled before time can be logged for this day.';
+    // public string $message = 'You are on approved leave on {{ date }} ({{ leave }}). Cancel that leave on the Leave page before logging time for this day.';
+    public string $message = 'You are on approved leave on {{ date }} ({{ leave }}). If you worked that day, tick "I worked during my leave" and give the reason.';
+    // public string $messageOther = '{{ name }} is on approved leave on {{ date }} ({{ leave }}). The leave has to be cancelled before time can be logged for this day.';
+    public string $messageOther = '{{ name }} is on approved leave on {{ date }} ({{ leave }}). If they worked that day, give the reason.';
 
     public function getTargets(): string
     {

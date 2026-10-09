@@ -100,6 +100,10 @@ final class DefaultTemplate implements TemplateInterface
         $columns[] = 'timesheet.meta.task';
         $columns[] = $durationFormatter;
         $columns[] = 'description';
+        // the reason, for entries logged on a day of leave as an exception (only when the export has such entries)
+        if ($layout['workedOnLeave'] ?? false) {
+            $columns[] = 'timesheet.meta.' . \App\EventSubscriber\WorkedOnLeaveSubscriber::FIELD;
+        }
 
         /*
          * The full list of columns the export had before, switched off: start and end time, prices, e-mail,

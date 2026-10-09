@@ -111,7 +111,9 @@
                 <td>{{ entry.activity is not null ? entry.activity.name : '' }}</td>
                 <td>{% if task is not empty %}{{ task matches '/^\\d+$/' ? 'Task #' ~ task : task }}{% endif %}</td>
                 <td class="col-hours">{{ decimal ? entry.duration|duration_decimal : entry.duration|duration }}</td>
-                <td class="col-description">{{ entry.description|default('')|nl2br }}</td>
+                {# <td class="col-description">{{ entry.description|default('')|nl2br }}</td> #}
+                {% set workedOnLeave = entry.metaField('worked_on_leave') %}
+                <td class="col-description">{{ entry.description|default('')|nl2br }}{% if workedOnLeave is not null and workedOnLeave.value is not empty %}<div class="worked-on-leave"><b>Worked on Leave:</b> {{ workedOnLeave.value }}</div>{% endif %}</td>
             </tr>
         {% else %}
             <tr><td colspan="{{ leading + 2 }}" class="empty">No entries.</td></tr>

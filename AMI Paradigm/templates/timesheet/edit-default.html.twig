@@ -111,6 +111,15 @@
             {% if form.description is defined %}
                 {{ form_row(form.description, {'row_attr': {'class': 'mb-3 ' ~ form.vars.name ~ '_row_' ~ form.description.vars.name}}) }}
             {% endif %}
+            {# "Worked on Leave": the reason, only on a day of approved leave. It stays hidden until "I worked during my leave"
+               is ticked (partials/leave-day-guard.html.twig), and is shown when the entry has a reason or the date is a leave day. #}
+            {% if form.metaFields is defined and form.metaFields.worked_on_leave is defined %}
+                {% set wolField = form.metaFields.worked_on_leave.value %}
+                {% set wolLeaveError = form.begin_date is defined and form.begin_date.vars.errors|filter(e => 'approved leave' in e.message)|length > 0 %}
+                {% set wolShow = wolField.vars.value is not empty or wolLeaveError %}
+                {{ form_row(wolField, {'row_attr': {'class': 'mb-3 worked-on-leave-row' ~ (wolShow ? '' : ' d-none')}}) }}
+                {% do form.metaFields.worked_on_leave.setRendered %}
+            {% endif %}
             {# Tags are hidden for now: the field is switched off in TimesheetEditForm.php, so this is skipped #}
             {% if form.tags is defined %}
                 {{ form_row(form.tags, {'row_attr': {'class': 'mb-3 ' ~ form.vars.name ~ '_row_' ~ form.tags.vars.name}}) }}

@@ -110,6 +110,11 @@
         {% endif %}
     {% elseif column == 'date' %}
         {{ entry.begin|date_short }}
+        {# time logged on a day of approved leave, as an exception (WorkedOnLeaveSubscriber): the reason shows on hover #}
+        {% set workedOnLeave = entry.metaField('worked_on_leave') %}
+        {% if workedOnLeave is not null and workedOnLeave.value is not empty %}
+            <div><span class="badge bg-orange-lt" title="{{ workedOnLeave.value }}" data-bs-toggle="tooltip">Worked on Leave</span></div>
+        {% endif %}
     {% elseif column == 'starttime' %}
         {{ entry.begin|time }}
     {% elseif column == 'endtime' %}

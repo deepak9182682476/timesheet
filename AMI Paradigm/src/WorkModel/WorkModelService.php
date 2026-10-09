@@ -222,6 +222,8 @@ final class WorkModelService
         $kinds = [];
         $users = [];
         $types = [];
+        // any entry logged on a day of leave as an exception: then the exports get a "Worked on Leave" column
+        $workedOnLeave = false;
         foreach ($entries as $entry) {
             if (!\is_object($entry) || !method_exists($entry, 'getProject') || !method_exists($entry, 'getUser')) {
                 continue;
@@ -231,6 +233,9 @@ final class WorkModelService
             $kinds[$kind] = true;
             $types[$projectId] = $names[$kind];
             $users[(int) $entry->getUser()?->getId()] = true;
+            if (!$workedOnLeave && method_exists($entry, 'getMetaField') && trim((string) $entry->getMetaField(\App\EventSubscriber\WorkedOnLeaveSubscriber::FIELD)?->getValue()) !== '') {
+                $workedOnLeave = true;
+            }
         }
 
         $levelFields = array_keys(self::META_LEVELS);
@@ -259,6 +264,7 @@ final class WorkModelService
             'columns' => $columns,
             'showProject' => !\in_array($model, [self::PRESALES, self::NON_PROJECT], true),
             'showEmployee' => \count($users) > 1,
+            'workedOnLeave' => $workedOnLeave,
             // for mixed exports: what kind of work each project is, by project ID
             'types' => $types,
         ];

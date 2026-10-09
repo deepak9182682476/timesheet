@@ -1,5 +1,6 @@
 {#
-    New time entry on a day of approved leave: the form says so and cannot be filled in.
+    New time entry on a day of approved leave: the form says so and cannot be filled in, unless the person ticks
+    "I worked during my leave" and gives a reason (the entry is then marked "Worked on Leave", see WorkedOnLeaveSubscriber).
     It shows which leave covers the day and keeps only the Date box, so another day can still be picked.
     This covers every place the form opens from (My timesheets, the calendar, a direct link).
     Saving such an entry is refused on the server as well (TimesheetApprovedLeaveValidator).
@@ -33,6 +34,7 @@
             var row = input.closest('.mb-3');
             if (row === null || row.parentNode === null) { return; }
 
+            /* before "Worked on Leave" (no way to log time on a leave day):
             var day = readDate(input);
             var leave = day !== null ? window.__approvedLeaveDays[day] : undefined;
             var onLeave = leave !== undefined;
@@ -64,6 +66,88 @@
             var holder = form.closest('.modal-content') || form;
             holder.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
                 if (onLeave) { button.disabled = true; button.dataset.leaveDisabled = '1'; }
+                else if (button.dataset.leaveDisabled === '1') { button.disabled = false; delete button.dataset.leaveDisabled; }
+            });
+        }
+
+            */
+            var day = readDate(input);
+            var leave = day !== null ? window.__approvedLeaveDays[day] : undefined;
+            var onLeave = leave !== undefined;
+
+            // "Worked on Leave": the exception. Ticking "I worked during my leave" opens the form again and asks for a reason.
+            var reasonRow = form.querySelector('.worked-on-leave-row');
+            var reasonInput = reasonRow !== null ? reasonRow.querySelector('input, textarea') : null;
+            if (form.dataset.wolInit !== '1') {
+                form.dataset.wolInit = '1';
+                // the form came back from the server with a reason or with the leave error: keep it open
+                if (reasonRow !== null && !reasonRow.classList.contains('d-none')) { form.dataset.workedOnLeave = '1'; }
+            }
+            if (!onLeave) { delete form.dataset.workedOnLeave; }
+            var worked = onLeave && reasonRow !== null && form.dataset.workedOnLeave === '1';
+            var blocked = onLeave && !worked;
+
+            Array.prototype.forEach.call(row.parentNode.children, function (el) {
+                if (el === row || el.classList.contains('leave-day-notice') || el.classList.contains('worked-on-leave-row')) { return; }
+                if (blocked && !el.classList.contains('d-none')) { el.classList.add('d-none'); el.dataset.leaveHidden = '1'; }
+                if (!blocked && el.dataset.leaveHidden === '1') { el.classList.remove('d-none'); delete el.dataset.leaveHidden; }
+            });
+
+            if (reasonRow !== null) {
+                reasonRow.classList.toggle('d-none', !worked);
+                if (reasonInput !== null) {
+                    reasonInput.required = worked;
+                    // a reason only belongs to an entry on a leave day
+                    if (!worked) { reasonInput.value = ''; }
+                }
+            }
+
+            var notice = row.parentNode.querySelector('.leave-day-notice');
+            if (onLeave) {
+                if (notice === null) {
+                    notice = document.createElement('div');
+                    notice.className = 'leave-day-notice alert alert-warning d-block mb-3';
+                    row.parentNode.insertBefore(notice, row.nextSibling);
+                }
+                notice.innerHTML = '';
+                var title = document.createElement('strong');
+                title.textContent = 'You are on approved leave on this day (' + leave + ').';
+                var text = document.createElement('div');
+                text.textContent = worked
+                    ? 'This entry is saved with a "Worked on Leave" mark and your reason, so your lead can see it. Your leave stays as it is.'
+                    : 'The leave is already in your timesheet. If you worked on this day anyway, tick the box below and give the reason.';
+                notice.appendChild(title);
+                notice.appendChild(text);
+                if (reasonRow !== null) {
+                    var label = document.createElement('label');
+                    label.className = 'form-check mt-2 mb-0';
+                    var box = document.createElement('input');
+                    box.type = 'checkbox';
+                    box.className = 'form-check-input';
+                    box.checked = worked;
+                    box.addEventListener('change', function () {
+                        if (box.checked) { form.dataset.workedOnLeave = '1'; } else { delete form.dataset.workedOnLeave; }
+                        check(form);
+                        if (box.checked && reasonInput !== null) { reasonInput.focus(); }
+                    });
+                    var caption = document.createElement('span');
+                    caption.className = 'form-check-label';
+                    caption.textContent = 'I worked during my leave';
+                    label.appendChild(box);
+                    label.appendChild(caption);
+                    notice.appendChild(label);
+                }
+                // the reason right below the notice, where the box was ticked
+                if (reasonRow !== null && reasonRow.parentNode === notice.parentNode && notice.nextSibling !== reasonRow) {
+                    notice.parentNode.insertBefore(reasonRow, notice.nextSibling);
+                }
+            } else if (notice !== null) {
+                notice.remove();
+            }
+
+            var holder = form.closest('.modal-content') || form;
+            holder.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
+                if (blocked) { button.disabled = true; button.dataset.leaveDisabled = '1'; }
                 else if (button.dataset.leaveDisabled === '1') { button.disabled = false; delete button.dataset.leaveDisabled; }
             });
         }

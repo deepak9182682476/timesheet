@@ -318,6 +318,10 @@ Earlier columns: begin, end and the prices
                     </td>
                     <td class="{{ tables.data_table_column_class(tableName, columns, 'description') }}">
                         {{ entry.description|desc2html }}
+                        {% set workedOnLeave = entry.metaField('worked_on_leave') %}
+                        {% if workedOnLeave is not null and workedOnLeave.value is not empty %}
+                            <div><span class="badge bg-orange-lt">Worked on Leave</span> <span class="text-secondary small">{{ workedOnLeave.value }}</span></div>
+                        {% endif %}
                     </td>
 {# The earlier cells of a row (begin, end, customer, prices, tags):
                 {% set currency = entry.project.customer.currency %}
@@ -359,6 +363,10 @@ Earlier columns: begin, end and the prices
                     </td>
                     <td class="{{ tables.data_table_column_class(tableName, columns, 'description') }}">
                         {{ entry.description|desc2html }}
+                        {% set workedOnLeave = entry.metaField('worked_on_leave') %}
+                        {% if workedOnLeave is not null and workedOnLeave.value is not empty %}
+                            <div><span class="badge bg-orange-lt">Worked on Leave</span> <span class="text-secondary small">{{ workedOnLeave.value }}</span></div>
+                        {% endif %}
                     </td>
 { # Tags are hidden for now: to bring the column back, remove this comment and add 'tags' to the columns at the top again
                                         <td class="{{ tables.data_table_column_class(tableName, columns, 'tags') }}">
