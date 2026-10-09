@@ -112,7 +112,14 @@
             return path;
         }
 
-        /* the items the person can pick: the ones assigned to them and the items above those */
+        /* does this person work on the item's project? Everything of a project is for all the people in its teams
+           (Team Mapping); a project without a team is open to everybody. Nothing is assigned to single people any more. */
+        function worksOn(s, item, who) {
+            var people = (s.data.projectUsers || {})[item.project];
+            return people === null || people === undefined || who === null || people.indexOf(who) !== -1;
+        }
+
+        /* the items the person can pick: everything of the projects they work on */
         function visibleIds(s, keep) {
             var who = person(s);
             var project = parseInt(s.project.value, 10);
@@ -120,7 +127,8 @@
             s.data.items.forEach(function (item) {
                 if (item.project !== project) { return; }
                 // several people picked: everything that is assigned to somebody (the server checks each person)
-                if (who === null ? item.users.length === 0 : item.users.indexOf(who) === -1) { return; }
+                // if (who === null ? item.users.length === 0 : item.users.indexOf(who) === -1) { return; }
+                if (!worksOn(s, item, who)) { return; }
                 pathOf(s, item.id).forEach(function (id) { visible[id] = true; });
             });
             // what the entry already uses stays selectable
@@ -207,7 +215,8 @@
             // above is just the way there: the task has to be picked as well.
             var who = person(s);
             var picked = deepest >= 0 ? byId(s, s.selects[deepest].value) : null;
-            var own = picked !== null && (who === null || picked.users.indexOf(who) !== -1 || picked.id === s.data.current);
+            // var own = picked !== null && (who === null || picked.users.indexOf(who) !== -1 || picked.id === s.data.current);
+            var own = picked !== null && (worksOn(s, picked, who) || picked.id === s.data.current);
             s.item.value = deepest >= s.activityLevel && own ? s.selects[deepest].value : '';
             s.needTask = deepest === s.activityLevel && !own && s.selects.length > s.activityLevel + 1;
             if (s.selects.length > s.activityLevel + 1) {
@@ -226,7 +235,8 @@
             var nothing = s.selects.length > 0 && s.selects[0].options.length <= 1;
             s.selects.forEach(function (select, level) { if (level <= s.activityLevel) { show(select, !nothing); } });
             if (nothing) {
-                hint(s, 'Nothing of this project is assigned ' + (person(s) === s.data.user ? 'to you' : 'to this person') + ' yet. A manager or lead does that on the "Project mapping" page.');
+                // hint(s, 'Nothing of this project is assigned ' + (person(s) === s.data.user ? 'to you' : 'to this person') + ' yet. A manager or lead does that on the "Project mapping" page.');
+                hint(s, 'Nothing is created for this project yet. A Project Lead or Project Manager does that on the "Task Creation" page.');
             } else {
                 hint(s, '');
             }
@@ -264,12 +274,33 @@
             }
         }
 
+        /* a project the person is allocated to: they are in one of its teams (Team Allocation), and it has something
+           to book on when it is an Agile or Waterfall project. Projects without a team are not offered here. */
+        function assigned(s, projectId) {
+            var who = person(s);
+            var people = (s.data.projectUsers || {})[projectId];
+            if (!Array.isArray(people) || (who === null ? people.length === 0 : people.indexOf(who) === -1)) { return false; }
+            var m = s.data.models[projectId] || null;
+            if (m !== null && m !== 'nonproject') {
+                if (s.withItems === undefined) {
+                    s.withItems = {};
+                    s.data.items.forEach(function (item) { s.withItems[item.project] = true; });
+                }
+                return s.withItems[parseInt(projectId, 10)] === true;
+            }
+            return true;
+        }
+
         function applyType(s, initial) {
             var type = s.type.value;
             var special = {nonproject: String(s.data.nonproject), presales: String(s.data.presales)};
             var changed;
             if (type === 'project') {
-                changed = narrowProjects(s, function (option) { return option.value !== special.nonproject && option.value !== special.presales; });
+                // changed = narrowProjects(s, function (option) { return option.value !== special.nonproject && option.value !== special.presales; });
+                changed = narrowProjects(s, function (option) {
+                    return option.value !== special.nonproject && option.value !== special.presales
+                        && (assigned(s, option.value) || option.value === String(s.data.currentProject));
+                });
             } else {
                 narrowProjects(s, function (option) { return option.value === special[type]; });
                 changed = s.project.value !== special[type];
@@ -355,6 +386,8 @@
             } else if (el === s.project) {
                 refresh(s, null);
             } else if (el === s.user) {
+                // another person: their projects
+                if (s.type.value === 'project') { applyType(s, false); }
                 if (usesItems(s)) { buildLevels(s, s.item.value !== '' ? s.item.value : null); }
             } else if (el.classList.contains('wi-level-select')) {
                 fill(s, parseInt(el.dataset.level, 10) + 1, undefined);

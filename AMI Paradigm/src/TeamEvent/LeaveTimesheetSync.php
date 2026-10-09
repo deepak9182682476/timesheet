@@ -33,10 +33,14 @@ final class LeaveTimesheetSync
     public const HOURS_PER_DAY = 10;
     public const LEAVE_PHASE = 'Leave & Time Off';
     public const LEAVE_ACTIVITY = 'Leave';
+    /** comp-off has its own activity (and colour), see migration Version20261009160000 */
+    // public const COMP_OFF_ACTIVITY = 'Comp Off';
+    public const COMP_OFF_ACTIVITY = 'Comp-off Leave';
     /** custom field on the time entry that points back to the leave request */
     public const META_FIELD = 'leave_request';
     /** leave type => standard task; everything else is booked as the default */
-    private const TASKS = ['Sick leave' => 'Sick Leave', 'Optional holiday' => 'Public Holiday'];
+    // private const TASKS = ['Sick leave' => 'Sick Leave', 'Optional holiday' => 'Public Holiday', 'Comp off' => 'Comp Off'];
+    private const TASKS = ['Sick leave' => 'Sick Leave', 'Optional holiday' => 'Public Holiday', TeamEvent::COMP_OFF => 'Comp-off Leave'];
     private const DEFAULT_TASK = 'Vacation / PTO';
 
     public function __construct(
@@ -87,12 +91,24 @@ final class LeaveTimesheetSync
             return;
         }
 
+        // comp-off goes on its own activity, when it exists
+        if ($leave->isCompOff()) {
+            $activity = $this->entityManager->getRepository(Activity::class)->findOneBy(['name' => self::COMP_OFF_ACTIVITY, 'project' => $project]) ?? $activity;
+        }
+
         $taskName = self::TASKS[$leave->getTitle()] ?? self::DEFAULT_TASK;
         $task = $this->entityManager->getRepository(ActivityTask::class)->findOneBy(['name' => $taskName, 'activity' => $activity]);
 
         $timezone = new \DateTimeZone($user->getTimezone());
         $seconds = self::HOURS_PER_DAY * 3600;
         $description = trim($leave->getTitle() . ($leave->getDescription() ? ' - ' . $leave->getDescription() : ''));
+        // comp-off: the part of a day the additional hours are worth, of a working day of 9 hours
+        $credit = $leave->isCompOff() ? $leave->getCompCredit() : null;
+        if ($credit !== null) {
+            $seconds = (int) round($credit->getCreditDays() * \App\Entity\AdditionalHours::DAY_HOURS * 3600);
+            $description = trim('Comp-off Leave (' . strtolower($credit->getCreditLabel()) . ') for ' . $credit->getReasonLabel() . ' on '
+                . $credit->getWorkDate()->format('d-M-y') . ($leave->getDescription() ? ' - ' . $leave->getDescription() : ''));
+        }
 
         foreach ($this->events->getLeaveDates($leave) as $date) {
             if ($this->hasLeaveEntry($user, $date, $timezone)) {

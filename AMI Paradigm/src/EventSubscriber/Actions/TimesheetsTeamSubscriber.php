@@ -34,9 +34,10 @@ final class TimesheetsTeamSubscriber extends AbstractActionsSubscriber
         }
 
         // many entries at once from an Excel file; superiors can include rows for their people (employees do not see it)
-        if ($this->isGranted('ROLE_TEAMLEAD')) {
-            $event->addAction('bulk-upload', ['title' => 'Bulk Upload', 'translation_domain' => false, 'url' => $this->path('timesheet_bulk_upload'), 'icon' => 'fas fa-file-upload']);
-        }
+        // hidden on Team Log Time as well (it is hidden on Log Time already)
+        // if ($this->isGranted('ROLE_TEAMLEAD')) {
+        //     $event->addAction('bulk-upload', ['title' => 'Bulk Upload', 'translation_domain' => false, 'url' => $this->path('timesheet_bulk_upload'), 'icon' => 'fas fa-file-upload']);
+        // }
 
         if ($this->isGranted('export_other_timesheet')) {
             foreach ($this->serviceExport->getTimesheetExporter() as $exporter) {

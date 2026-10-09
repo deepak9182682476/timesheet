@@ -295,7 +295,7 @@ final class WorkModelService
         $project = new Project();
         $project->setName(self::PRESALES_PROJECT);
         $project->setCustomer($customer);
-        $project->setComment('Pre-sales work: Lead > Category > Activity > Task. Managers and leads maintain the leads on the "Project mapping" page.');
+        $project->setComment('Pre-sales work: Lead > Category > Activity > Task. Managers and leads maintain the leads on the "Task Creation" page.');
         $project->setGlobalActivities(false);
         $this->entityManager->persist($project);
         $this->entityManager->flush();
@@ -462,8 +462,8 @@ final class WorkModelService
     }
 
     /**
-     * The people who belong to each project:
-     * - everybody assigned to any of its items,
+     * The people who belong to each project (only projects linked to a team; the others are open to everybody):
+     * - the members of its teams (Team Mapping),
      * - the managers and leads who built its mapping (created its items),
      * - everybody who logged time on it.
      * A project that is missing here has no mapping at all, for example "Non-Project Activities".
@@ -473,19 +473,28 @@ final class WorkModelService
     public function getMappedUserIds(): array
     {
         $connection = $this->entityManager->getConnection();
-        $rows = $connection->fetchAllAssociative(
-            'SELECT DISTINCT i.project_id, u.user_id FROM kimai2_work_item_users u JOIN kimai2_work_items i ON i.id = u.work_item_id'
-        );
-        $rows = array_merge($rows, $connection->fetchAllAssociative(
-            'SELECT DISTINCT project_id, created_by_id AS user_id FROM kimai2_work_items WHERE created_by_id IS NOT NULL'
-        ));
-
+        // Items are not assigned to single people any more: a project's people are the members of its teams (Team Mapping).
+        // $rows = $connection->fetchAllAssociative(
+        //     'SELECT DISTINCT i.project_id, u.user_id FROM kimai2_work_item_users u JOIN kimai2_work_items i ON i.id = u.work_item_id'
+        // );
+        // $rows = array_merge($rows, $connection->fetchAllAssociative(
+        //     'SELECT DISTINCT project_id, created_by_id AS user_id FROM kimai2_work_items WHERE created_by_id IS NOT NULL'
+        // ));
         $mapped = [];
-        foreach ($rows as $row) {
-            $mapped[(int) $row['project_id']][(int) $row['user_id']] = (int) $row['user_id'];
+        foreach ($this->getProjectMembers($connection->fetchFirstColumn('SELECT DISTINCT project_id FROM kimai2_projects_teams')) as $projectId => $members) {
+            if ($members !== null) {
+                $mapped[$projectId] = array_combine($members, $members) ?: [];
+            }
         }
         if ($mapped === []) {
             return [];
+        }
+        // the managers and leads who built its mapping count as well
+        $rows = $connection->fetchAllAssociative(
+            'SELECT DISTINCT project_id, created_by_id AS user_id FROM kimai2_work_items WHERE created_by_id IS NOT NULL AND project_id IN (' . implode(',', array_keys($mapped)) . ')'
+        );
+        foreach ($rows as $row) {
+            $mapped[(int) $row['project_id']][(int) $row['user_id']] = (int) $row['user_id'];
         }
 
         // people who logged time count as well, but only for projects that have a mapping
@@ -497,6 +506,45 @@ final class WorkModelService
         }
 
         return array_map('array_values', $mapped);
+    }
+
+    /**
+     * Who works on each project: everybody in the teams linked to it on Team Mapping. Everything mapped for the
+     * project (Epic, Module, Lead ... down to Task) is offered to all of them; nothing is assigned to single people.
+     * A project without a team is open to everybody (null), the way a project without a team is visible to everybody.
+     *
+     * @param array<int|string> $projectIds
+     * @return array<int, array<int>|null> active user IDs keyed by project ID, null for "everybody"
+     */
+    public function getProjectMembers(array $projectIds): array
+    {
+        $projectIds = array_values(array_unique(array_map('intval', $projectIds)));
+        if ($projectIds === []) {
+            return [];
+        }
+        $members = array_fill_keys($projectIds, null);
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative(
+            'SELECT pt.project_id, u.id AS user_id, u.enabled FROM kimai2_projects_teams pt
+             LEFT JOIN kimai2_users_teams ut ON ut.team_id = pt.team_id
+             LEFT JOIN kimai2_users u ON u.id = ut.user_id
+             WHERE pt.project_id IN (' . implode(',', $projectIds) . ')'
+        );
+        foreach ($rows as $row) {
+            $projectId = (int) $row['project_id'];
+            $members[$projectId] ??= [];
+            if ($row['user_id'] !== null && (int) $row['enabled'] === 1 && !\in_array((int) $row['user_id'], $members[$projectId], true)) {
+                $members[$projectId][] = (int) $row['user_id'];
+            }
+        }
+
+        return $members;
+    }
+
+    public function isProjectMember(int $projectId, int $userId): bool
+    {
+        $members = $this->getProjectMembers([$projectId])[$projectId] ?? null;
+
+        return $members === null || \in_array($userId, $members, true);
     }
 
     /**
@@ -757,7 +805,7 @@ final class WorkModelService
                 'level' => $row['level'],
                 'name' => $row['name'],
                 'activity' => $row['activity'],
-                'users' => $row['effective'],
+                // 'users' => $row['effective'],
             ];
         }
 
@@ -770,6 +818,12 @@ final class WorkModelService
             'models' => $this->getProjectModels(),
             'levels' => self::LEVELS,
             'items' => $items,
+            // who works on each project (Team Mapping); null: everybody. Everything of a project is offered to all of them.
+            // (every project: the Project list of a time entry only offers the projects of the person's teams)
+            // 'projectUsers' => (object) $this->getProjectMembers(array_unique(array_map(static fn (array $item) => $item['project'], $items))),
+            'projectUsers' => (object) $this->getProjectMembers($this->entityManager->getConnection()->fetchFirstColumn('SELECT id FROM kimai2_projects')),
+            // the project the entry is on already stays in the list
+            'currentProject' => $timesheet->getProject()?->getId(),
             'current' => $currentValue !== '' ? (int) $currentValue : null,
             // an entry from before the models existed keeps its old fields until somebody picks an item for it
             'legacy' => $timesheet->getId() !== null && $project !== null && $this->usesItems($project) && $currentValue === '',
@@ -812,44 +866,55 @@ final class WorkModelService
             ];
         }
 
-        $pairs = $this->entityManager->getConnection()->fetchAllAssociative(
-            'SELECT u.work_item_id, u.user_id FROM kimai2_work_item_users u JOIN kimai2_work_items i ON i.id = u.work_item_id WHERE i.project_id IN (' . implode(',', $projectIds) . ')'
-        );
-        foreach ($pairs as $pair) {
-            $id = (int) $pair['work_item_id'];
-            if (isset($rows[$id])) {
-                $rows[$id]['users'][] = (int) $pair['user_id'];
-            }
-        }
-
-        foreach ($rows as $id => $row) {
-            $step = $id;
-            $guard = 0;
-            while ($step !== null && isset($rows[$step]) && $guard++ < 20) {
-                if ($rows[$step]['users'] !== []) {
-                    $rows[$id]['effective'] = $rows[$step]['users'];
-                    break;
-                }
-                $step = $rows[$step]['parent'];
-            }
-        }
+        // Items are not assigned to single people any more: who can book on them follows the project's teams (getProjectMembers).
+        // $pairs = $this->entityManager->getConnection()->fetchAllAssociative(
+        //     'SELECT u.work_item_id, u.user_id FROM kimai2_work_item_users u JOIN kimai2_work_items i ON i.id = u.work_item_id WHERE i.project_id IN (' . implode(',', $projectIds) . ')'
+        // );
+        // foreach ($pairs as $pair) {
+        //     $id = (int) $pair['work_item_id'];
+        //     if (isset($rows[$id])) {
+        //         $rows[$id]['users'][] = (int) $pair['user_id'];
+        //     }
+        // }
+        //
+        // foreach ($rows as $id => $row) {
+        //     $step = $id;
+        //     $guard = 0;
+        //     while ($step !== null && isset($rows[$step]) && $guard++ < 20) {
+        //         if ($rows[$step]['users'] !== []) {
+        //             $rows[$id]['effective'] = $rows[$step]['users'];
+        //             break;
+        //         }
+        //         $step = $rows[$step]['parent'];
+        //     }
+        // }
 
         return $rows;
     }
 
     /**
-     * The projects in which something is assigned to this person directly.
+     * The projects with a mapping that this person works on (earlier: in which something was assigned to them directly).
      *
      * @return array<int>
      */
     private function getAssignedProjectIds(int $userId): array
     {
-        $ids = $this->entityManager->getConnection()->fetchFirstColumn(
-            'SELECT DISTINCT i.project_id FROM kimai2_work_item_users u JOIN kimai2_work_items i ON i.id = u.work_item_id WHERE u.user_id = ?',
-            [$userId]
-        );
+        // $ids = $this->entityManager->getConnection()->fetchFirstColumn(
+        //     'SELECT DISTINCT i.project_id FROM kimai2_work_item_users u JOIN kimai2_work_items i ON i.id = u.work_item_id WHERE u.user_id = ?',
+        //     [$userId]
+        // );
+        // return array_map('intval', $ids);
 
-        return array_map('intval', $ids);
+        // the projects with a mapping that this person works on (member of one of its teams, or a project open to everybody)
+        $ids = $this->entityManager->getConnection()->fetchFirstColumn('SELECT DISTINCT project_id FROM kimai2_work_items');
+        $mine = [];
+        foreach ($this->getProjectMembers($ids) as $projectId => $members) {
+            if ($members === null || \in_array($userId, $members, true)) {
+                $mine[] = $projectId;
+            }
+        }
+
+        return $mine;
     }
 
     /**
@@ -862,8 +927,11 @@ final class WorkModelService
     private function visibleRows(array $rows, int $userId, array $keep = []): array
     {
         $visible = [];
+        $members = $this->getProjectMembers(array_map(static fn (array $row) => $row['project'], $rows));
         foreach ($rows as $id => $row) {
-            if (!isset($keep[$id]) && !\in_array($userId, $row['effective'], true)) {
+            // if (!isset($keep[$id]) && !\in_array($userId, $row['effective'], true)) {
+            $projectMembers = $members[$row['project']] ?? null;
+            if (!isset($keep[$id]) && $projectMembers !== null && !\in_array($userId, $projectMembers, true)) {
                 continue;
             }
             $step = $id;
@@ -916,13 +984,16 @@ final class WorkModelService
         $picked = [];
         $activityIds = [];
         $candidates = [];
+        $members = $this->getProjectMembers(array_map(static fn (array $row) => $row['project'], $rows));
         foreach ($rows as $id => $row) {
             $levels = self::LEVELS[$models[$row['project']] ?? ''] ?? null;
             if ($levels === null) {
                 continue;
             }
             $activityLevel = \count($levels) - 2;
-            if ($row['level'] < $activityLevel || (!isset($used[$id]) && !\in_array($userId, $row['effective'], true))) {
+            // if ($row['level'] < $activityLevel || (!isset($used[$id]) && !\in_array($userId, $row['effective'], true))) {
+            $projectMembers = $members[$row['project']] ?? null;
+            if ($row['level'] < $activityLevel || (!isset($used[$id]) && $projectMembers !== null && !\in_array($userId, $projectMembers, true))) {
                 continue;
             }
             $candidates[$id] = true;
@@ -1015,12 +1086,16 @@ final class WorkModelService
         // who it is assigned to is checked when the entry is made; later corrections of the entry stay possible.
         // An entry for several people at once is checked person by person, on the copies made for them.
         $user = $timesheet->getUser();
-        if ($timesheet->getId() === null && !($timesheet instanceof MultiUserTimesheet) && $user !== null && !isset($item->getEffectiveUsers()[(int) $user->getId()])) {
-            // only tasks below this activity are assigned to the person: the task has to be picked as well
-            if ($item->getLevel() === $this->getActivityLevel($project) && isset($this->getPeopleBelow($project, [$item])[(int) $item->getId()][(int) $user->getId()])) {
-                return \sprintf('Please pick the %s as well: on %s "%s" only single tasks are assigned to %s.', end($levels), $this->getLevelName($item), $item->getName(), $user->getDisplayName());
-            }
-            return \sprintf('%s "%s" is not assigned to %s. A manager or lead assigns it on the "Project mapping" page.', $this->getLevelName($item), $item->getName(), $user->getDisplayName());
+        // if ($timesheet->getId() === null && !($timesheet instanceof MultiUserTimesheet) && $user !== null && !isset($item->getEffectiveUsers()[(int) $user->getId()])) {
+        //     // only tasks below this activity are assigned to the person: the task has to be picked as well
+        //     if ($item->getLevel() === $this->getActivityLevel($project) && isset($this->getPeopleBelow($project, [$item])[(int) $item->getId()][(int) $user->getId()])) {
+        //         return \sprintf('Please pick the %s as well: on %s "%s" only single tasks are assigned to %s.', end($levels), $this->getLevelName($item), $item->getName(), $user->getDisplayName());
+        //     }
+        //     return \sprintf('%s "%s" is not assigned to %s. A manager or lead assigns it on the "Project mapping" page.', $this->getLevelName($item), $item->getName(), $user->getDisplayName());
+        // }
+        // everything of a project is for all the people in its teams (Team Mapping)
+        if ($timesheet->getId() === null && !($timesheet instanceof MultiUserTimesheet) && $user !== null && !$this->isProjectMember((int) $project->getId(), (int) $user->getId())) {
+            return \sprintf('%s is not in a team of the project "%s". A Project Lead or Project Manager adds them on the "Team Allocation" page.', $user->getDisplayName(), $project->getName());
         }
 
         return null;

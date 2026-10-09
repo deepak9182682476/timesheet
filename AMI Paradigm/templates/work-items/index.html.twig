@@ -11,7 +11,7 @@
 {% block main %}
     <div class="card mb-3">
         <div class="card-header">
-            <h3 class="card-title">Project Mapping</h3>
+            <h3 class="card-title">Task Creation</h3>
             {% if project is not null %}
                 <div class="card-actions btn-list">
                     <a href="{{ path('work_items_upload', {'project': project.id}) }}" class="btn"><i class="fas fa-file-upload me-2"></i>Bulk Upload (Excel)</a>
@@ -40,6 +40,7 @@
                             <label class="form-label" for="work-item-search">Find by name</label>
                             <input type="search" id="work-item-search" class="form-control" placeholder="Part of the name of any {{ levels|join(', ') }}" autocomplete="off">
                         </div>
+                        {# Nothing is assigned to single people any more, so there is no "Assigned to" filter
                         <div class="col-12 col-md-3">
                             <label class="form-label" for="work-item-person">Assigned to</label>
                             <select id="work-item-person" class="form-select">
@@ -49,6 +50,7 @@
                                 {% endfor %}
                             </select>
                         </div>
+                        #}
                         <div class="col-auto">
                             <a href="#" id="work-item-reset" class="btn btn-link d-none">Show all</a>
                         </div>
@@ -56,8 +58,10 @@
                 </div>
                 {% if project is not null %}
                     <div class="text-secondary mt-3">
-                        People pick <strong>{{ levels|join(' > ') }}</strong> on a time entry for this project, and only see what is assigned to them.
-                        An item without people of its own is for the same people as the item above it, so assigning an {{ levels[0] }} covers everything below it.
+                        {# People pick <strong>{{ levels|join(' > ') }}</strong> on a time entry for this project, and only see what is assigned to them.
+                        An item without people of its own is for the same people as the item above it, so assigning an {{ levels[0] }} covers everything below it. #}
+                        People pick <strong>{{ levels|join(' > ') }}</strong> on a time entry for this project. Everything added here is for
+                        {% if project_people is null %}everybody: this project is not linked to a team yet (Team Allocation).{% elseif project_people is empty %}nobody yet: its team has no members (Team Allocation).{% else %}everybody in the project's teams (Team Allocation): {{ project_people|map(p => p.displayName)|join(', ') }}.{% endif %}
                         {{ levels|last }} is optional on a time entry.
                     </div>
                 {% endif %}
@@ -66,12 +70,13 @@
     </div>
 
     {% if project is not null %}
+        {# Nothing is assigned to single people any more: the bar to assign ticked items is switched off
         <form method="post" action="{{ path('work_items_assign') }}" id="work-item-assign">
             <input type="hidden" name="_token" value="{{ csrf_token('work_item_assign') }}">
             <input type="hidden" name="project" value="{{ project.id }}">
             <div id="work-item-ids"></div>
 
-            {# shown while items are ticked #}
+            (shown while items are ticked)
             <div class="card mb-3 d-none border-primary" id="work-item-bar">
                 <div class="card-body">
                     <div class="row g-2 align-items-end">
@@ -101,11 +106,12 @@
                 </div>
             </div>
         </form>
+        #}
 
         <div class="card mb-3">
             {% if rows is empty %}
                 <div class="card-body text-secondary">
-                    Nothing is mapped for this project yet. Start with "Add {{ levels[0] }}", or fill the whole project from an Excel file with "Bulk upload (Excel)".
+                    Nothing is created for this project yet. Start with "Add {{ levels[0] }}", or fill the whole project from an Excel file with "Bulk Upload (Excel)".
                 </div>
             {% else %}
                 <div class="card-header py-2">
@@ -121,9 +127,9 @@
                            data-search-url="{{ path('work_items_search') }}">
                         <thead>
                         <tr>
-                            <th class="w-1 pe-0"><input type="checkbox" class="form-check-input" id="work-item-check-all" aria-label="Select all shown"></th>
+                            {# <th class="w-1 pe-0"><input type="checkbox" class="form-check-input" id="work-item-check-all" aria-label="Select all shown"></th> #}
                             <th>{{ levels|join(' > ') }}</th>
-                            <th>Assigned to</th>
+                            {# <th>Assigned to</th> #}
                             <th class="w-1"></th>
                         </tr>
                         </thead>
@@ -249,7 +255,7 @@
 
             // ---- search by name and by person: a flat list of what matches, each with the path above it
             function searching() {
-                return search.value.trim() !== '' || person.value !== '';
+                return search.value.trim() !== '' || (person !== null && person.value !== '');
             }
 
             var timer = null;
@@ -257,7 +263,7 @@
             function show() {
                 var mine = ++ticket;
                 var url = searching()
-                    ? table.dataset.searchUrl + '?project=' + encodeURIComponent(project) + '&q=' + encodeURIComponent(search.value.trim()) + '&user=' + encodeURIComponent(person.value)
+                    ? table.dataset.searchUrl + '?project=' + encodeURIComponent(project) + '&q=' + encodeURIComponent(search.value.trim()) + '&user=' + encodeURIComponent(person !== null ? person.value : '')
                     : table.dataset.childrenUrl + '?project=' + encodeURIComponent(project);
                 reset.classList.toggle('d-none', !searching());
                 load(url).then(function (html) {
@@ -273,11 +279,11 @@
                 timer = window.setTimeout(show, 300);
             });
             search.addEventListener('keydown', function (event) { if (event.key === 'Enter') { event.preventDefault(); } });
-            person.addEventListener('change', show);
+            if (person !== null) { person.addEventListener('change', show); }
             reset.addEventListener('click', function (event) {
                 event.preventDefault();
                 search.value = '';
-                person.value = '';
+                if (person !== null) { person.value = ''; }
                 show();
             });
 
@@ -300,6 +306,7 @@
                 return Array.prototype.slice.call(body.querySelectorAll('.wi-check:checked'));
             }
             function selection() {
+                if (bar === null) { return; }
                 var boxes = ticked();
                 count.textContent = boxes.length;
                 bar.classList.toggle('d-none', boxes.length === 0);
@@ -313,6 +320,7 @@
                 });
                 if (boxes.length === 0) { all.checked = false; }
             }
+            if (bar !== null) {
             body.addEventListener('change', function (event) {
                 if (event.target.classList.contains('wi-check')) { selection(); }
             });
@@ -335,6 +343,7 @@
                     window.alert('Please pick the people first.');
                 }
             });
+            }
 
             // ask before deleting (the rows come and go, so the question hangs on the table)
             body.addEventListener('submit', function (event) {

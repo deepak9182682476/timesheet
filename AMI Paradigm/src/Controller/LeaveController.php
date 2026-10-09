@@ -12,6 +12,7 @@ namespace App\Controller;
 use App\Entity\TeamEvent;
 use App\Form\LeaveApplyForm;
 use App\Holiday\HolidayCalendar;
+use App\TeamEvent\AdditionalHoursService;
 use App\TeamEvent\LeaveTimesheetSync;
 use App\TeamEvent\TeamEventService;
 use App\Utils\PageSetup;
@@ -36,7 +37,8 @@ final class LeaveController extends AbstractController
     public function __construct(
         private readonly TeamEventService $events,
         private readonly HolidayCalendar $calendar,
-        private readonly LeaveTimesheetSync $timesheetSync
+        private readonly LeaveTimesheetSync $timesheetSync,
+        private readonly AdditionalHoursService $additionalHours,
     )
     {
     }
@@ -58,9 +60,12 @@ final class LeaveController extends AbstractController
         }
 
         $year = (int) date('Y');
+        // the decisions on this page are no longer news for the bell
+        $this->events->markDecisionsSeen($user);
 
         return $this->render('leave/index.html.twig', [
-            'page_setup' => new PageSetup('Leave'),
+            // 'page_setup' => new PageSetup('Leave'),
+            'page_setup' => new PageSetup('Leave & Comp-off'),
             'year' => $year,
             'allowance' => $this->events->getLeaveAllowance($user),
             'used' => $this->events->getLeaveUsed($user, $year),
@@ -80,11 +85,24 @@ final class LeaveController extends AbstractController
         $leave = new TeamEvent();
         $leave->setType(TeamEvent::TYPE_LEAVE);
 
+        // comp-off: the approved additional hours that can still be used
+        $credits = [];
+        $creditsById = [];
+        $creditDays = [];
+        foreach ($this->additionalHours->getAvailableCredits($user) as $credit) {
+            $label = $credit->getCreditLabel() . ' for ' . $credit->getReasonLabel() . ' on ' . $credit->getWorkDate()->format('d-M-y')
+                . ' (' . $credit->getHours() . ' h, use by ' . $credit->getExpiresOn()->format('d-M-y') . ')';
+            $credits[$label] = (string) $credit->getId();
+            $creditsById[(string) $credit->getId()] = $credit;
+            $creditDays[(string) $credit->getId()] = ['days' => (float) $credit->getCreditDays(), 'label' => $credit->getCreditLabel()];
+        }
+
         $form = $this->createForm(LeaveApplyForm::class, $leave, [
             'action' => $this->generateUrl('leave_apply'),
             'method' => 'POST',
             // the person's office, when an administrator set it
             'office' => HolidayCalendar::getUserLocation($user),
+            'credits' => $credits,
         ]);
         $form->handleRequest($request);
 
@@ -94,6 +112,21 @@ final class LeaveController extends AbstractController
             $leave->setEndDate($lastDay !== null ? clone $lastDay : clone $leave->getStartDate());
             if ($leave->getEndDate()->format('Y-m-d') < $leave->getStartDate()->format('Y-m-d')) {
                 $form->get('endDate')->addError(new FormError('The last day cannot be before the first day.'));
+            }
+
+            // comp-off: one day (or part of one) for approved additional hours, within 30 days of the day worked
+            if ($form->isValid() && $leave->getTitle() === TeamEvent::COMP_OFF) {
+                $credit = $creditsById[(string) $form->get('compCredit')->getData()] ?? null;
+                $leave->setEndDate(clone $leave->getStartDate());
+                if ($credit === null) {
+                    $form->get('compCredit')->addError(new FormError($creditsById === [] ? 'You have no comp-off available: an extra hours claim has to be approved first (Apply Leave > Extra Hours Claim).' : 'Choose the extra hours claim this comp-off is for.'));
+                } elseif ($leave->getStartDate()->format('Y-m-d') <= $credit->getWorkDate()->format('Y-m-d')) {
+                    $form->get('startDate')->addError(new FormError('The comp-off has to be after the day you worked (' . $credit->getWorkDate()->format('d-M-y') . ').'));
+                } elseif ($leave->getStartDate()->format('Y-m-d') > $credit->getExpiresOn()->format('Y-m-d')) {
+                    $form->get('startDate')->addError(new FormError('This comp-off has to be taken by ' . $credit->getExpiresOn()->format('d-M-y') . '.'));
+                } else {
+                    $leave->setCompCredit($credit);
+                }
             }
 
             if ($form->isValid()) {
@@ -133,7 +166,8 @@ final class LeaveController extends AbstractController
         }
 
         return $this->render('leave/apply.html.twig', [
-            'page_setup' => new PageSetup('Leave'),
+            // 'page_setup' => new PageSetup('Leave'),
+            'page_setup' => new PageSetup('Leave & Comp-off'),
             'form' => $form->createView(),
             'year' => $year,
             'balance' => $this->events->getLeaveBalance($user, $year),
@@ -144,6 +178,7 @@ final class LeaveController extends AbstractController
             'optional_used' => $this->events->getOptionalHolidaysUsed($user),
             'optional_limit' => TeamEventService::OPTIONAL_HOLIDAYS_PER_YEAR,
             'festivals' => $this->calendar->getDaysByLocation(),
+            'credit_days' => $creditDays,
         ]);
     }
 
@@ -156,6 +191,12 @@ final class LeaveController extends AbstractController
         }
 
         if ($this->hasValidToken($request)) {
+            // a rejected comp-off always says why
+            if ($decision === 'reject' && $leave->isCompOff() && trim((string) $request->request->get('comment', '')) === '') {
+                $this->flashError('Please give the reason for rejecting the comp-off.');
+
+                return $this->redirectToRoute('leave');
+            }
             try {
                 $this->events->decideLeave($this->getUser(), $leave, $decision === 'approve', (string) $request->request->get('comment', ''));
                 // approved leave is put into the person's timesheet, so they do not have to enter it again

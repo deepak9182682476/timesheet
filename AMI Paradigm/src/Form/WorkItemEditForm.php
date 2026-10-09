@@ -44,7 +44,8 @@ final class WorkItemEditForm extends AbstractType
             ]);
         }
 
-        $builder
+        // Nothing is assigned to single people any more: everything of a project is for all the people in its teams (Team Mapping).
+        /* $builder
             ->add('users', EntityType::class, [
                 'label' => 'Assigned to',
                 'translation_domain' => false,
@@ -58,7 +59,7 @@ final class WorkItemEditForm extends AbstractType
                     ? 'Only these people can book time on it. Leave empty to use the same people as the ' . $options['parent_name'] . ' above.'
                     : 'Only these people can book time on it and on everything below it. Nobody can pick it while this is empty.',
             ])
-        ;
+        ; */
     }
 
     public function configureOptions(OptionsResolver $resolver): void

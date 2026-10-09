@@ -53,7 +53,8 @@ final class MenuSubscriber implements EventSubscriberInterface
         /** @var User $user */
         $user = $auth->getUser();
 
-        $menu->addChild(new MenuItemModel('dashboard', 'dashboard.title', 'dashboard', [], 'dashboard'));
+        // the Dashboard is under "My Timesheets", below "Bulk Entry (Week)" (it was the first entry of the menu)
+        // $menu->addChild(new MenuItemModel('dashboard', 'dashboard.title', 'dashboard', [], 'dashboard'));
         $menu->addChild(new MenuItemModel('favorites', 'favorite_routes', null, [], 'bookmarked'));
 
         // Tasks is hidden for now: remove the comment marks on the three lines below to bring the menu entry back
@@ -69,9 +70,15 @@ final class MenuSubscriber implements EventSubscriberInterface
 
         // apply for leave (a manager approves it) and look up the company holiday calendar
         $leave = new MenuItemModel('apply_leave', 'Apply Leave', null, [], 'fas fa-plane-departure');
-        $leaveList = new MenuItemModel('leave', 'Leave', 'leave', [], 'fas fa-calendar-plus');
+        // $leaveList = new MenuItemModel('leave', 'Leave', 'leave', [], 'fas fa-calendar-plus');
+        $leaveList = new MenuItemModel('leave', 'Leave & Comp-off', 'leave', [], 'fas fa-calendar-plus');
         $leaveList->setChildRoutes(['leave_apply']);
         $leave->addChild($leaveList);
+        // hours worked on a weekend, a festival or holiday, or a night shift: they give comp-off once approved
+        // $additional = new MenuItemModel('additional_hours', 'Additional Hours', 'additional_hours', [], 'fas fa-business-time');
+        $additional = new MenuItemModel('additional_hours', 'Extra Hours Claim', 'additional_hours', [], 'fas fa-business-time');
+        $additional->setChildRoutes(['additional_hours_new']);
+        $leave->addChild($additional);
         $leave->addChild(new MenuItemModel('holiday_calendar', 'Holiday Calendar', 'holiday_calendar', [], 'fas fa-calendar-alt'));
         $leave->setExpanded(true);
         $menu->addChild($leave);
@@ -97,6 +104,8 @@ final class MenuSubscriber implements EventSubscriberInterface
             }
         }
 
+        $times->addChild(new MenuItemModel('dashboard', 'dashboard.title', 'dashboard', [], 'dashboard'));
+
         if ($times->hasChildren()) {
             $times->setExpanded(true); // Kimai is all about time-tracking, so we expand this menu always
             $menu->addChild($times);
@@ -120,7 +129,7 @@ final class MenuSubscriber implements EventSubscriberInterface
 
         // Project Managers and Project Leads put their teams together: projects, people and what each one does there
         if ($auth->isGranted('ROLE_TEAMLEAD')) {
-            $teamMapping = new MenuItemModel('team_mapping', 'Team Mapping', 'team_mapping', [], 'fas fa-users-cog');
+            $teamMapping = new MenuItemModel('team_mapping', 'Team Allocation', 'team_mapping', [], 'fas fa-users-cog');
             $projectTimes->addChild($teamMapping);
         }
 
@@ -131,7 +140,7 @@ final class MenuSubscriber implements EventSubscriberInterface
             $canMap = false;
         }
         if ($canMap) {
-            $mapping = new MenuItemModel('work_items', 'Project Mapping', 'work_items', [], 'fas fa-sitemap');
+            $mapping = new MenuItemModel('work_items', 'Task Creation', 'work_items', [], 'fas fa-sitemap');
             $mapping->setChildRoutes(['work_items_create', 'work_items_edit']);
             $projectTimes->addChild($mapping);
         }

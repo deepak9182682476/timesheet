@@ -54,7 +54,9 @@ final class WorkItemImportService
      */
     public function getHeaders(Project $project): array
     {
-        return array_merge($this->models->getLevels($project), [self::ASSIGNED]);
+        // no "Assigned to" column any more: everything of a project is for all the people in its teams (Team Mapping)
+        // return array_merge($this->models->getLevels($project), [self::ASSIGNED]);
+        return $this->models->getLevels($project);
     }
 
     /**
@@ -85,12 +87,12 @@ final class WorkItemImportService
                         $cells[$level] = (string) $step->getName();
                     }
                 }
-                $people = [];
-                foreach ($item->getUsers() as $person) {
-                    $people[] = $person->getUserIdentifier();
-                }
-                sort($people);
-                $cells[] = implode(', ', $people);
+                // $people = [];
+                // foreach ($item->getUsers() as $person) {
+                //     $people[] = $person->getUserIdentifier();
+                // }
+                // sort($people);
+                // $cells[] = implode(', ', $people);
                 $writer->addRow(Row::fromValues($cells));
             }
         }
@@ -101,13 +103,15 @@ final class WorkItemImportService
         foreach ([
             'One row is one ' . mb_strtolower((string) end($levels)) . '. Fill in every cell of the row: ' . implode(', ', $levels) . '.',
             'Write the names again on every row. The ' . $levels[0] . ' is created the first time it appears and used again on the rows after it, so nothing is doubled.',
-            '"' . self::ASSIGNED . '" is for the last item of the row: usernames (or e-mails, or names) separated by commas. See the sheet "People".',
-            'The same people are also put on everything before it in the row (the ' . implode(', ', \array_slice($levels, 0, -1)) . '), so they can book on those as well.',
-            'A row can stop early: a row with only the ' . $levels[0] . ' and "' . self::ASSIGNED . '" assigns the whole ' . $levels[0] . '. Items without people of their own are for the same people as the item above them.',
-            '"' . self::ASSIGNED . '" left empty changes nothing. A single "' . self::CLEAR . '" takes everybody off the item.',
+            // '"' . self::ASSIGNED . '" is for the last item of the row: usernames (or e-mails, or names) separated by commas. See the sheet "People".',
+            // 'The same people are also put on everything before it in the row (the ' . implode(', ', \array_slice($levels, 0, -1)) . '), so they can book on those as well.',
+            // 'A row can stop early: a row with only the ' . $levels[0] . ' and "' . self::ASSIGNED . '" assigns the whole ' . $levels[0] . '. Items without people of their own are for the same people as the item above them.',
+            // '"' . self::ASSIGNED . '" left empty changes nothing. A single "' . self::CLEAR . '" takes everybody off the item.',
+            'Everything in the file is for all the people in the project\'s teams (Team Allocation). Nothing is assigned to single people.',
+            'A row can stop early, for example a row with only the ' . $levels[0] . '.',
             'Items that exist already are found by their name, so the file can be uploaded again after a correction.',
-            'To change who things are assigned to later: download the current mapping, change "' . self::ASSIGNED . '" in Excel and upload the file again.',
-            'Nothing is ever deleted by an upload. Items are deleted on the "Project mapping" page.',
+            // 'To change who things are assigned to later: download the current mapping, change "' . self::ASSIGNED . '" in Excel and upload the file again.',
+            'Nothing is ever deleted by an upload. Items are deleted on the "Task Creation" page.',
             'Keep the first row (the column names) as it is. Up to ' . self::MAX_ROWS . ' rows per file.',
             '',
             'Example:',
@@ -119,14 +123,15 @@ final class WorkItemImportService
             $writer->addRow(Row::fromValues($example));
         }
 
-        $people = $writer->addNewSheetAndMakeItCurrent();
-        $people->setName('People');
-        $people->setColumnWidth(30, 1);
-        $people->setColumnWidth(36, 2);
-        $writer->addRow(Row::fromValues(['Username', 'Name'], $bold));
-        foreach ($this->models->getAssignableUsers($user) as $person) {
-            $writer->addRow(Row::fromValues([$person->getUserIdentifier(), $person->getDisplayName()]));
-        }
+        // no "People" sheet any more: nothing is assigned to single people
+        // $people = $writer->addNewSheetAndMakeItCurrent();
+        // $people->setName('People');
+        // $people->setColumnWidth(30, 1);
+        // $people->setColumnWidth(36, 2);
+        // $writer->addRow(Row::fromValues(['Username', 'Name'], $bold));
+        // foreach ($this->models->getAssignableUsers($user) as $person) {
+        //     $writer->addRow(Row::fromValues([$person->getUserIdentifier(), $person->getDisplayName()]));
+        // }
 
         $writer->setCurrentSheet($sheet);
         $writer->close();
@@ -156,11 +161,17 @@ final class WorkItemImportService
             return $cells;
         };
 
+        // return [
+        //     array_merge($path('First'), ['Development', 'Build the screen', $me . ', second.username']),
+        //     array_merge($path('First'), ['Development', 'Write the tests', $me]),
+        //     array_merge($path('First'), ['Testing', 'Run the tests', 'second.username']),
+        //     array_merge($path('Second'), ['Development', 'Build the API', $me . ', second.username']),
+        // ];
         return [
-            array_merge($path('First'), ['Development', 'Build the screen', $me . ', second.username']),
-            array_merge($path('First'), ['Development', 'Write the tests', $me]),
-            array_merge($path('First'), ['Testing', 'Run the tests', 'second.username']),
-            array_merge($path('Second'), ['Development', 'Build the API', $me . ', second.username']),
+            array_merge($path('First'), ['Development', 'Build the screen']),
+            array_merge($path('First'), ['Development', 'Write the tests']),
+            array_merge($path('First'), ['Testing', 'Run the tests']),
+            array_merge($path('Second'), ['Development', 'Build the API']),
         ];
     }
 
@@ -416,7 +427,9 @@ final class WorkItemImportService
                             $empty = false;
                         }
                     }
-                    $people = $assigned !== null ? $this->text($cells[$assigned] ?? '') : '';
+                    // an "Assigned to" column of an older file is not used any more
+                    // $people = $assigned !== null ? $this->text($cells[$assigned] ?? '') : '';
+                    $people = '';
                     if (!$empty || $people !== '') {
                         $rows[$line] = ['names' => $names, 'assigned' => $people];
                     }

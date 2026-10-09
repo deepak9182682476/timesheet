@@ -1,0 +1,45 @@
+{# Reject with a reason (the reason is required). Buttons with the class "reject-with-reason" open it;
+   data-action is where the form goes, data-summary the question shown. #}
+<div class="modal modal-blur fade" id="reject-reason-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <form method="post" action="#" class="modal-content" id="reject-reason-form">
+            <input type="hidden" name="_token" value="{{ token }}">
+            <div class="modal-header">
+                <h5 class="modal-title">{{ title }}</h5>
+                <button type="button" class="btn-close reject-reason-close" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3" id="reject-reason-summary"></p>
+                <label class="form-label required" for="reject-reason-comment">Reason for rejecting</label>
+                <textarea class="form-control" name="comment" id="reject-reason-comment" rows="3" maxlength="1000" required placeholder="Let them know why it is rejected"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary me-auto reject-reason-close">Cancel</button>
+                <button type="submit" class="btn btn-danger">Reject</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script type="text/javascript">
+    (function () {
+        var modal = document.getElementById('reject-reason-modal');
+        var form = document.getElementById('reject-reason-form');
+        function close() { modal.classList.remove('show'); modal.style.display = 'none'; var b = document.getElementById('reject-reason-backdrop'); if (b !== null) { b.remove(); } }
+        document.querySelectorAll('.reject-with-reason').forEach(function (button) {
+            button.addEventListener('click', function () {
+                form.action = button.dataset.action;
+                document.getElementById('reject-reason-summary').textContent = button.dataset.summary || '';
+                document.getElementById('reject-reason-comment').value = '';
+                var backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                backdrop.id = 'reject-reason-backdrop';
+                document.body.appendChild(backdrop);
+                modal.style.display = 'block';
+                modal.classList.add('show');
+                document.getElementById('reject-reason-comment').focus();
+            });
+        });
+        modal.querySelectorAll('.reject-reason-close').forEach(function (el) { el.addEventListener('click', close); });
+        document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && modal.classList.contains('show')) { close(); } });
+    })();
+</script>

@@ -13,8 +13,10 @@ use App\Entity\TeamEvent;
 use App\Form\TeamEventEditForm;
 use App\Holiday\HolidayCalendar;
 use App\TeamEvent\TeamEventService;
+use App\TeamEvent\TeamEventTimesheetSync;
 use App\Utils\PageSetup;
 use Symfony\Component\Form\FormError;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -33,6 +35,7 @@ final class TeamEventController extends AbstractController
     public function __construct(
         private readonly TeamEventService $events,
         private readonly HolidayCalendar $holidays,
+        private readonly TeamEventTimesheetSync $eventTimesheets,
     ) {
     }
 
@@ -100,6 +103,69 @@ final class TeamEventController extends AbstractController
         ]);
     }
 
+    /**
+     * The events of the logged-in person for Calendar Entry: one all-day item per day on top of that day,
+     * green for an activity (its hours are logged) and orange for information; the details show on mouse-over.
+     * Leave is left out (it is in the timesheet already).
+     */
+    #[Route(path: '/calendar-feed', name: 'team_events_calendar', methods: ['GET'])]
+    public function calendarFeed(Request $request): JsonResponse
+    {
+        $user = $this->getUser();
+        try {
+            $from = new \DateTime(substr((string) $request->query->get('from', 'today'), 0, 10));
+            $to = new \DateTime(substr((string) $request->query->get('to', '+7 days'), 0, 10));
+        } catch (\Exception) {
+            return new JsonResponse([]);
+        }
+        if ($to < $from || $from->diff($to)->days > 62) {
+            return new JsonResponse([]);
+        }
+        // the calendar's "to" is the day after the last one shown
+        $last = (clone $to)->modify('-1 day');
+
+        $items = [];
+        foreach ($this->events->getEventsForUser($user, $from, $last, null, true) as $event) {
+            if ($event->getType() === TeamEvent::TYPE_LEAVE) {
+                continue;
+            }
+            // an activity is not marked on top of the day: its hours are in the calendar already as a "Team Event" entry
+            if ($event->isActivity()) {
+                continue;
+            }
+            $activity = $event->isActivity();
+            $time = $event->getStartTime() !== null
+                ? $event->getStartTime()->format('H:i') . ($event->getEndTime() !== null ? ' - ' . $event->getEndTime()->format('H:i') : '')
+                : '';
+            $details = $event->getTitle() . ' (' . $event->getKindLabel() . ', ' . $event->getTypeLabel() . ')'
+                . ($time !== '' ? "\n" . $time : '')
+                . "\nFor: " . $event->getAudienceLabel()
+                . ($event->getDescription() ? "\n" . $event->getDescription() : '');
+
+            $day = \DateTime::createFromInterface(max($event->getStartDate(), $from));
+            $end = min($event->getEndDate(), $last)->format('Y-m-d');
+            $guard = 0;
+            // one item per day and no end: the calendar adds no hours for them to the day totals
+            while ($day->format('Y-m-d') <= $end && $guard++ < 62) {
+                $items[] = [
+                    'id' => 'ami-event-' . $event->getId() . '-' . $day->format('Ymd'),
+                    // only information gets the star in front (an activity shows as itself, its hours are in the timesheet)
+                    'title' => ($activity ? '' : '★ ') . $event->getTitle(),
+                    'start' => $day->format('Y-m-d'),
+                    'allDay' => true,
+                    'backgroundColor' => $activity ? '#d5f0da' : '#fde1cd',
+                    'borderColor' => $activity ? '#2fb344' : '#f76707',
+                    'textColor' => $activity ? '#1d7a2e' : '#a8480a',
+                    'classNames' => ['ami-team-event', $activity ? 'ami-team-event-activity' : 'ami-team-event-information'],
+                    'extendedProps' => ['details' => $details],
+                ];
+                $day->modify('+1 day');
+            }
+        }
+
+        return new JsonResponse($items);
+    }
+
     #[Route(path: '/create', name: 'team_events_create', methods: ['GET', 'POST'])]
     public function create(Request $request): Response
     {
@@ -141,6 +207,8 @@ final class TeamEventController extends AbstractController
         }
 
         try {
+            // the hours an activity logged in people's timesheets go with it
+            $this->eventTimesheets->remove($event);
             $this->events->delete($event);
             $this->flashSuccess('action.delete.success');
         } catch (\Exception $ex) {
@@ -268,9 +336,20 @@ final class TeamEventController extends AbstractController
                 $form->get('endTime')->addError(new FormError('The end time has to be after the start time.'));
             }
 
+            // an activity logs its hours in the timesheets: it needs both times, the end after the start
+            if ($event->isActivity()) {
+                if ($event->getStartTime() === null || $event->getEndTime() === null) {
+                    $form->get('startTime')->addError(new FormError('An activity needs a start and an end time: those hours are logged in the timesheets.'));
+                } elseif ($event->getEndTime()->format('H:i') <= $event->getStartTime()->format('H:i')) {
+                    $form->get('endTime')->addError(new FormError('The end time has to be after the start time.'));
+                }
+            }
+
             if ($form->isValid()) {
                 try {
                     $this->events->save($event);
+                    // activity: its hours go into the timesheets of everybody it applies to (made again after a change)
+                    $this->eventTimesheets->sync($event);
                     $this->flashSuccess('action.update.success');
 
                     return $this->redirectToRoute('team_events');

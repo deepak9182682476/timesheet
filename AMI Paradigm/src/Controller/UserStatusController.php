@@ -80,6 +80,13 @@ final class UserStatusController extends AbstractController
 
                 // off every item of every project (Epic, Feature, ... Task)
                 $removed = (int) $connection->executeStatement('DELETE FROM kimai2_work_item_users WHERE user_id = ?', [(int) $person->getId()]);
+                // a project's people are now the members of its teams (Team Mapping): the person leaves their teams,
+                // except a team they are the only lead of (so somebody can still change that team)
+                $removed += (int) $connection->executeStatement(
+                    'DELETE ut FROM kimai2_users_teams ut
+                     WHERE ut.user_id = ? AND NOT (ut.teamlead = 1 AND (SELECT COUNT(*) FROM (SELECT team_id, user_id, teamlead FROM kimai2_users_teams) o WHERE o.team_id = ut.team_id AND o.teamlead = 1) = 1)',
+                    [(int) $person->getId()]
+                );
                 $connection->commit();
             } catch (\Throwable $ex) {
                 $connection->rollBack();
@@ -88,7 +95,8 @@ final class UserStatusController extends AbstractController
 
             $message = $person->getDisplayName() . ' is disabled.';
             if ($removed > 0) {
-                $message .= ' Removed from ' . \count($mapped) . (\count($mapped) === 1 ? ' project' : ' projects') . ' (' . implode(', ', $mapped) . '): ' . $removed . ($removed === 1 ? ' mapped item.' : ' mapped items.');
+                // $message .= ' Removed from ' . \count($mapped) . (\count($mapped) === 1 ? ' project' : ' projects') . ' (' . implode(', ', $mapped) . '): ' . $removed . ($removed === 1 ? ' mapped item.' : ' mapped items.');
+                $message .= ' Removed from ' . \count($mapped) . (\count($mapped) === 1 ? ' project' : ' projects') . ' (' . implode(', ', $mapped) . ').';
             } else {
                 $message .= ' The person was not mapped to any project.';
             }
@@ -124,7 +132,7 @@ final class UserStatusController extends AbstractController
             $person->setEnabled(true);
             $this->entityManager->persist($person);
             $this->entityManager->flush();
-            $this->addFlash('info', $person->getDisplayName() . ' is enabled again. Map the person to their projects on the "Project mapping" page.');
+            $this->addFlash('info', $person->getDisplayName() . ' is enabled again. Add the person to their teams again on the "Team Allocation" page.');
 
             return $this->redirectToRoute('admin_user');
         }
@@ -151,12 +159,20 @@ final class UserStatusController extends AbstractController
      */
     private function getMappedProjects(User $person): array
     {
+        // the projects of the person's teams (Team Mapping), and projects with items assigned to them in the past
         return $this->entityManager->getConnection()->fetchFirstColumn(
-            'SELECT DISTINCT p.name FROM kimai2_work_item_users u
-             JOIN kimai2_work_items i ON i.id = u.work_item_id
-             JOIN kimai2_projects p ON p.id = i.project_id
-             WHERE u.user_id = ? ORDER BY p.name',
-            [(int) $person->getId()]
+            'SELECT name FROM (
+                SELECT p.name FROM kimai2_users_teams ut
+                JOIN kimai2_projects_teams pt ON pt.team_id = ut.team_id
+                JOIN kimai2_projects p ON p.id = pt.project_id
+                WHERE ut.user_id = ?
+                UNION
+                SELECT p.name FROM kimai2_work_item_users u
+                JOIN kimai2_work_items i ON i.id = u.work_item_id
+                JOIN kimai2_projects p ON p.id = i.project_id
+                WHERE u.user_id = ?
+             ) x ORDER BY name',
+            [(int) $person->getId(), (int) $person->getId()]
         );
     }
 }

@@ -121,16 +121,21 @@ final class TeamMappingService
     }
 
     /**
-     * Projects a team can be linked to. The two built-in projects are left out: everybody books on those,
-     * and a project linked to a team is only offered to the people of that team.
+     * Projects a team can be linked to. "Non-Project Activities" is left out: everybody books on it.
+     * "Pre-Sales" can be linked as well: then only the people of its teams book on Pre-Sales and see its leads
+     * (while it is linked to no team, everybody does). A project linked to a team is only offered to the people of that team.
      *
      * @return array<int, string> project name by ID
      */
     public function getProjects(): array
     {
+        // $rows = $this->connection()->fetchAllAssociative(
+        //     'SELECT id, name FROM kimai2_projects WHERE visible = 1 AND name NOT IN (?, ?) ORDER BY name',
+        //     [\App\Entity\Phase::NON_PROJECT_NAME, WorkModelService::PRESALES_PROJECT]
+        // );
         $rows = $this->connection()->fetchAllAssociative(
-            'SELECT id, name FROM kimai2_projects WHERE visible = 1 AND name NOT IN (?, ?) ORDER BY name',
-            [\App\Entity\Phase::NON_PROJECT_NAME, WorkModelService::PRESALES_PROJECT]
+            'SELECT id, name FROM kimai2_projects WHERE visible = 1 AND name <> ? ORDER BY name',
+            [\App\Entity\Phase::NON_PROJECT_NAME]
         );
         $projects = [];
         foreach ($rows as $row) {
@@ -140,11 +145,64 @@ final class TeamMappingService
         return $projects;
     }
 
+    /**
+     * A team name is taken when another team has the same name, whatever the capitals and spaces:
+     * with a team "citms", "CITMS", "CiTms" and " citms " are taken as well.
+     */
     public function nameTaken(string $name, ?int $exceptTeamId = null): bool
     {
-        $id = $this->connection()->fetchOne('SELECT id FROM kimai2_teams WHERE LOWER(name) = LOWER(?)', [trim($name)]);
+        // $id = $this->connection()->fetchOne('SELECT id FROM kimai2_teams WHERE LOWER(name) = LOWER(?)', [trim($name)]);
+        // return $id !== false && (int) $id !== $exceptTeamId;
+        $wanted = self::nameKey($name);
+        foreach ($this->getTeamNames() as $id => $existing) {
+            if ($id !== $exceptTeamId && self::nameKey($existing) === $wanted) {
+                return true;
+            }
+        }
 
-        return $id !== false && (int) $id !== $exceptTeamId;
+        return false;
+    }
+
+    /**
+     * Every team name, so the page can say at once that a name is taken.
+     *
+     * @return array<int, string> name by team ID
+     */
+    public function getTeamNames(): array
+    {
+        $names = [];
+        foreach ($this->connection()->fetchAllAssociative('SELECT id, name FROM kimai2_teams') as $row) {
+            $names[(int) $row['id']] = (string) $row['name'];
+        }
+
+        return $names;
+    }
+
+    /**
+     * A name as it is compared: small letters, single spaces, nothing around it.
+     */
+    public static function nameKey(string $name): string
+    {
+        return mb_strtolower(trim(preg_replace('/\s+/u', ' ', $name) ?? ''));
+    }
+
+    /**
+     * The start and end date of each project, as the administrator entered them on the project.
+     *
+     * @return array<int, array{start: string|null, end: string|null}> keyed by project ID
+     */
+    public function getProjectDates(): array
+    {
+        $dates = [];
+        foreach ($this->connection()->fetchAllAssociative('SELECT id, `start`, `end` FROM kimai2_projects') as $row) {
+            $dates[(int) $row['id']] = [
+                // as Y-m-d: the page writes them out and works out how long the project runs
+                'start' => $row['start'] !== null ? (new \DateTimeImmutable((string) $row['start']))->format('Y-m-d') : null,
+                'end' => $row['end'] !== null ? (new \DateTimeImmutable((string) $row['end']))->format('Y-m-d') : null,
+            ];
+        }
+
+        return $dates;
     }
 
     /**

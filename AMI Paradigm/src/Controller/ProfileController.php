@@ -472,6 +472,7 @@ final class ProfileController extends AbstractController
                 'include_supervisor' => $this->isGranted('supervisor', $user),
                 'include_username' => $currentUser->isSuperAdmin() && $currentUser !== $user,
                 'include_password_reset' => $this->isGranted('password', $user),
+                'edit_employee_id' => $currentUser->isAdmin() || $currentUser->isSuperAdmin(),
             ]
         );
     }

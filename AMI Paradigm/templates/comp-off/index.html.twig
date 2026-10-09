@@ -1,0 +1,178 @@
+{% extends 'base.html.twig' %}
+{% import "macros/widgets.html.twig" as widgets %}
+
+{# Comp-off requests: mine, and those of my people that wait for my decision (see CompOffController) #}
+
+{% macro status_badge(request) %}
+    {% set colors = {'pending': 'warning', 'approved': 'success', 'rejected': 'danger'} %}
+    {% set labels = {'pending': 'Waiting for approval', 'approved': 'Approved', 'rejected': 'Rejected'} %}
+    <span class="badge bg-{{ colors[request.status] ?? 'secondary' }} text-white">{{ labels[request.status] ?? request.status }}</span>
+    {% if not request.pending and request.decidedBy is not null and request.decidedBy.id != request.user.id %}
+        <div class="text-secondary small">by {{ request.decidedBy.displayName }}</div>
+    {% endif %}
+    {% if request.status == 'rejected' and request.decisionComment is not empty %}
+        <div class="small mt-1"><span class="text-secondary">Reason:</span> {{ request.decisionComment|nl2br }}</div>
+    {% endif %}
+{% endmacro %}
+
+{% macro day_off(request) %}
+    {{ request.startDate|date_short }}
+    <div class="text-secondary small">{{ request.startDate|date_format('l') }} &middot; {{ request.compHalfDay ? 'Half day' : 'Full day' }}</div>
+{% endmacro %}
+
+{% macro worked(request) %}
+    {% if request.compWorkedDate is not null %}
+        {{ request.compWorkedDate|date_short }}
+        <div class="text-secondary small">{{ request.compReasonLabel }}{% if request.compWorkedHours is not null %} &middot; {{ request.compWorkedHours }} h{% endif %}</div>
+    {% endif %}
+{% endmacro %}
+
+{% block main %}
+    {% set token = csrf_token('leave_action') %}
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">My Comp-Offs</h3>
+            <div class="card-actions">
+                <a href="{{ path('comp_off_request') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Request Comp-Off</a>
+            </div>
+        </div>
+        {% if my_requests is empty %}
+            <div class="card-body text-secondary">
+                Worked on a weekend, a festival or holiday, or a night shift? Use "Request Comp-Off" to ask your manager for a day (or half day) off for it.
+            </div>
+        {% else %}
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Comp-off date</th>
+                        <th>For working on</th>
+                        <th>Work done</th>
+                        <th>{{ 'status'|trans }}</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for request in my_requests %}
+                        <tr>
+                            <td class="text-nowrap">{{ _self.day_off(request) }}</td>
+                            <td class="text-nowrap">{{ _self.worked(request) }}</td>
+                            <td class="text-secondary">{{ request.description|default('')|nl2br }}</td>
+                            <td>{{ _self.status_badge(request) }}</td>
+                            <td class="text-nowrap">
+                                {% if cancellable[request.id] ?? false %}
+                                    <form method="post" action="{{ path('comp_off_cancel', {'id': request.id}) }}" class="comp-off-cancel-form">
+                                        <input type="hidden" name="_token" value="{{ token }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if team_requests is not empty %}
+        <div class="card mb-3" id="team-comp-off">
+            <div class="card-header">
+                <h3 class="card-title">Team Comp-Off Requests</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Person</th>
+                        <th>Comp-off date</th>
+                        <th>For working on</th>
+                        <th>Work done</th>
+                        <th>{{ 'status'|trans }}</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for request in team_requests %}
+                        <tr>
+                            <td class="text-nowrap">
+                                {{ widgets.user_avatar(request.user, false, 'avatar-rounded avatar-xs me-1') }}
+                                {{ request.user.displayName }}
+                            </td>
+                            <td class="text-nowrap">{{ _self.day_off(request) }}</td>
+                            <td class="text-nowrap">{{ _self.worked(request) }}</td>
+                            <td class="text-secondary">{{ request.description|default('')|nl2br }}</td>
+                            <td>{{ _self.status_badge(request) }}</td>
+                            <td class="text-nowrap">
+                                {% if request.pending and (decidable[request.id] ?? false) %}
+                                    <div class="btn-list flex-nowrap justify-content-end">
+                                        <form method="post" action="{{ path('comp_off_decide', {'id': request.id, 'decision': 'approve'}) }}">
+                                            <input type="hidden" name="_token" value="{{ token }}">
+                                            <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                        </form>
+                                        <button type="button" class="btn btn-sm btn-outline-danger comp-off-reject-button" data-action="{{ path('comp_off_decide', {'id': request.id, 'decision': 'reject'}) }}" data-who="{{ request.user.displayName }}" data-when="{{ request.startDate|date_format('d-M-y') }}">Reject</button>
+                                    </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
+    {# Reject a comp-off: the reason is required #}
+    <div class="modal modal-blur fade" id="comp-off-reject-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <form method="post" action="#" class="modal-content" id="comp-off-reject-form">
+                <input type="hidden" name="_token" value="{{ token }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reject Comp-Off</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3" id="comp-off-reject-summary"></p>
+                    <label class="form-label required" for="comp-off-reject-comment">Reason for rejecting</label>
+                    <textarea class="form-control" name="comment" id="comp-off-reject-comment" rows="3" maxlength="1000" required placeholder="Let them know why the comp-off is rejected"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary me-auto" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Reject Comp-Off</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script type="text/javascript">
+        document.querySelectorAll('.comp-off-cancel-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (!window.confirm('Cancel this comp-off?')) { event.preventDefault(); }
+            });
+        });
+        (function () {
+            var modal = document.getElementById('comp-off-reject-modal');
+            var form = document.getElementById('comp-off-reject-form');
+            if (modal === null || form === null) { return; }
+            function close() { modal.classList.remove('show'); modal.style.display = 'none'; document.body.classList.remove('modal-open'); var b = document.getElementById('comp-off-reject-backdrop'); if (b !== null) { b.remove(); } }
+            document.querySelectorAll('.comp-off-reject-button').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    form.action = button.dataset.action;
+                    document.getElementById('comp-off-reject-summary').textContent = 'Reject the comp-off of ' + button.dataset.who + ' on ' + button.dataset.when + '?';
+                    document.getElementById('comp-off-reject-comment').value = '';
+                    var backdrop = document.createElement('div');
+                    backdrop.className = 'modal-backdrop fade show';
+                    backdrop.id = 'comp-off-reject-backdrop';
+                    document.body.appendChild(backdrop);
+                    modal.style.display = 'block';
+                    modal.classList.add('show');
+                    document.body.classList.add('modal-open');
+                    document.getElementById('comp-off-reject-comment').focus();
+                });
+            });
+            modal.querySelectorAll('[data-bs-dismiss="modal"]').forEach(function (el) { el.addEventListener('click', close); });
+            modal.addEventListener('click', function (event) { if (event.target === modal) { close(); } });
+            document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && modal.classList.contains('show')) { close(); } });
+        })();
+    </script>
+{% endblock %}

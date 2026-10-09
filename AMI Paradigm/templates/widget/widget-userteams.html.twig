@@ -12,7 +12,7 @@
         {# the logged-in person gets a coloured outline (earlier their box was filled and could be clicked to show the team's projects) #}
         {# pointing at a person shows both roles: the one the administrator gave (system) and the one in this team (Team Mapping) #}
         {% set systemRole = widgets.user_role_name(user)|trim %}
-        {% set hover = 'Role in the system: ' ~ systemRole ~ (member.teamRole is not empty ? ' · Role in this team: ' ~ member.teamRole : '') %}
+        {% set hover = 'Role in the System: ' ~ systemRole ~ (member.teamRole is not empty ? ' · Role in the Project: ' ~ member.teamRole : '') %}
         <div class="org-person{% if isMe %} org-me{% endif %}" title="{{ hover }}" data-bs-toggle="tooltip">
             {{ widgets.user_avatar(user, false, 'avatar-rounded avatar-sm') }}
             <span class="org-text">

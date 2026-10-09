@@ -11,6 +11,8 @@
         {% form_theme form 'form/horizontal.html.twig' %}
         {% block form_body %}
             {{ form_row(form.title) }}
+            {# comp-off: which approved additional hours it is for (shown only for "Comp-off Leave") #}
+            {{ form_row(form.compCredit, {'row_attr': {'class': 'mb-3 leave-comp-credit-row'}}) }}
             {{ form_row(form.location) }}
             {{ form_row(form.startDate) }}
             {{ form_row(form.endDate) }}
@@ -26,13 +28,14 @@
                 </div>
             </div>
             <div class="mb-3 row">
-                <div class="col-sm-2 col-form-label">Leave days</div>
+                {# for a comp-off this row shows the comp-off days instead (see the script below) #}
+                <div class="col-sm-2 col-form-label" id="leave-day-label">Leave days</div>
                 <div class="col-sm-10">
                     <div class="d-flex align-items-center flex-wrap" style="gap: .75rem; min-height: 2.25rem;">
                         <strong id="leave-day-count">&ndash;</strong>
                         {# small box: the leave balance now, and what is left once days are picked #}
                         <span id="leave-balance-box" class="badge bg-primary-lt" style="font-size: .875rem; padding: .5rem .75rem;">
-                            Leave balance: <span id="leave-balance-value">{{ balance }}</span>
+                            <span id="leave-balance-label">Leave balance:</span> <span id="leave-balance-value">{{ balance }}</span>
                         </span>
                         <span id="leave-day-note" class="text-danger"></span>
                         <span id="leave-day-info" class="text-secondary small"></span>
@@ -44,6 +47,74 @@
         {% endblock %}
     {% endembed %}
 
+    <script type="text/javascript">
+        // "Comp-off Leave": choose the additional hours it is for; it is a single day (no "To")
+        (function () {
+            var type = document.getElementById('leave_apply_form_title');
+            var credit = document.getElementById('leave_apply_form_compCredit');
+            var to = document.getElementById('leave_apply_form_endDate');
+            if (type === null || credit === null) { return; }
+            var creditRow = credit.closest('.leave-comp-credit-row') || credit.closest('.row');
+            var toRow = to !== null ? to.closest('.row') : null;
+            function apply() {
+                var compOff = type.value === '{{ constant('App\\Entity\\TeamEvent::COMP_OFF') }}';
+                creditRow.classList.toggle('d-none', !compOff);
+                credit.required = compOff;
+                if (toRow !== null) {
+                    toRow.classList.toggle('d-none', compOff);
+                    if (compOff) { to.value = ''; }
+                }
+            }
+            type.addEventListener('change', apply);
+            apply();
+        })();
+    </script>
+    {# asked before applying a comp-off worth less than a full day #}
+    <div class="modal modal-blur fade" id="comp-off-part-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="comp-off-part-title">Half Day Comp-off</h5>
+                    <button type="button" class="btn-close comp-off-part-close" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="comp-off-part-text"></div>
+                <div class="modal-footer">
+                    <a href="#" class="btn btn-link link-secondary me-auto comp-off-part-close">Back</a>
+                    <button type="button" class="btn btn-primary" id="comp-off-part-apply">Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var creditDays = {{ credit_days|json_encode|raw }};
+            var type = document.getElementById('leave_apply_form_title');
+            var credit = document.getElementById('leave_apply_form_compCredit');
+            var from = document.getElementById('leave_apply_form_startDate');
+            var modal = document.getElementById('comp-off-part-modal');
+            if (type === null || credit === null || credit.form === null) { return; }
+            var form = credit.form;
+            var confirmed = false;
+            function show() { modal.style.display = 'block'; modal.classList.add('show'); var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'comp-off-part-backdrop'; document.body.appendChild(b); }
+            function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('comp-off-part-backdrop'); if (b) { b.remove(); } }
+            modal.querySelectorAll('.comp-off-part-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
+            document.getElementById('comp-off-part-apply').addEventListener('click', function () { confirmed = true; hide(); form.requestSubmit ? form.requestSubmit() : form.submit(); });
+            form.addEventListener('submit', function (event) {
+                var chosen = creditDays[credit.value] || null;
+                if (confirmed || type.value !== '{{ constant('App\\Entity\\TeamEvent::COMP_OFF') }}' || chosen === null || chosen.days >= 1 || from.value.trim() === '') { return; }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                var hours = Math.round(chosen.days * {{ constant('App\\Entity\\AdditionalHours::DAY_HOURS') }} * 100) / 100;
+                document.getElementById('comp-off-part-title').textContent = chosen.label.replace(/\b\w/g, function (c) { return c.toUpperCase(); }) + ' Comp-off';
+                document.getElementById('comp-off-part-text').innerHTML = '';
+                var text = document.createElement('div');
+                text.textContent = 'You are taking only ' + chosen.label.toLowerCase().replace(/^(half|quarter) day$/, 'a $1 day') + ' as comp-off on ' + from.value
+                    + ' (' + chosen.days + ' day, ' + hours + ' hours). Please work the rest of that day and log it in your timesheet.';
+                document.getElementById('comp-off-part-text').appendChild(text);
+                show();
+            }, true);
+        })();
+    </script>
     <style>
         /* leave form calendar: weekends light red (not selectable), holidays light green, optional holidays light amber - each festival with its name */
         .litepicker .container__days .day-item.leave-weekend { background-color: rgba(214, 57, 57, .16); color: var(--tblr-danger, #d63939); cursor: not-allowed; }
@@ -68,6 +139,9 @@
             var notCounted = {{ not_counted|json_encode|raw }};
             var balance = {{ balance|json_encode|raw }};
             var overdraw = {{ overdraw|json_encode|raw }};
+            // comp-off: what each available credit is worth, and all of them together
+            var creditDays = {{ credit_days|json_encode|raw }};
+            var compOffTotal = Object.keys(creditDays).reduce(function (sum, id) { return sum + creditDays[id].days; }, 0);
 
             var type = document.getElementById('leave_apply_form_title');
             var location = document.getElementById('leave_apply_form_location');
@@ -147,9 +221,19 @@
                 var box = document.getElementById('leave-balance-box');
                 var info = document.getElementById('leave-day-info');
                 var value = document.getElementById('leave-balance-value');
+                var compOff = type.value === '{{ constant('App\\Entity\\TeamEvent::COMP_OFF') }}';
+                var credit = document.getElementById('leave_apply_form_compCredit');
+                var chosen = compOff && credit !== null ? (creditDays[credit.value] || null) : null;
+                document.getElementById('leave-day-label').textContent = compOff ? 'Comp-off days' : 'Leave days';
+                document.getElementById('leave-balance-label').textContent = compOff ? 'Comp-off available:' : 'Leave balance:';
                 function show(days, remaining, problem) {
                     count.textContent = days === null ? '\u2013' : days + (days === 1 ? ' day' : ' days');
                     value.textContent = remaining;
+                    // a comp-off is worth what its additional hours are worth (a quarter, half, three quarters or a full day)
+                    if (compOff) {
+                        count.textContent = chosen === null ? '\u2013' : chosen.label + (chosen.days < 1 ? ' (' + chosen.days + ' day)' : '');
+                        value.textContent = compOffTotal + (compOffTotal === 1 ? ' day' : ' days');
+                    }
                     note.textContent = problem || '';
                     info.textContent = '';
                     box.className = 'badge ' + (problem ? 'bg-danger-lt' : 'bg-primary-lt');
@@ -204,6 +288,8 @@
                 }
             }
 
+            var creditField = document.getElementById('leave_apply_form_compCredit');
+            if (creditField !== null) { creditField.addEventListener('change', update); }
             [type, location, from, to].forEach(function (field) {
                 field.addEventListener('change', update);
                 field.addEventListener('input', update);

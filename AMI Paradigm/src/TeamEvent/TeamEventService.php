@@ -32,7 +32,8 @@ final class TeamEventService
     /** How many optional holidays a person can take per calendar year */
     public const OPTIONAL_HOLIDAYS_PER_YEAR = 2;
     /** Leave types that do not use up the yearly leave days */
-    public const LEAVE_TYPES_NOT_COUNTED = ['Comp off', 'Optional holiday'];
+    // public const LEAVE_TYPES_NOT_COUNTED = ['Comp off', 'Optional holiday'];
+    public const LEAVE_TYPES_NOT_COUNTED = [TeamEvent::COMP_OFF, 'Optional holiday'];
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -578,7 +579,42 @@ final class TeamEventService
         $leave->setDecidedBy($user);
         // the reason is optional and only kept for a rejection
         $leave->setDecisionComment($approve ? null : $comment);
+        // the bell tells the person until they have looked at the Leave page
+        $leave->setDecisionSeen(false);
         $this->save($leave);
+    }
+
+    /**
+     * The person's own leave (comp-off included) that a manager approved or rejected and that they have not seen yet.
+     *
+     * @return array<TeamEvent>
+     */
+    public function getDecisionNotifications(User $user): array
+    {
+        return $this->entityManager->createQueryBuilder()
+            ->select('e')
+            ->from(TeamEvent::class, 'e')
+            ->where('e.type = :type')
+            ->andWhere('e.user = :user')
+            ->andWhere('e.decisionSeen = false')
+            ->setParameter('type', TeamEvent::TYPE_LEAVE)
+            ->setParameter('user', $user)
+            ->orderBy('e.startDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function markDecisionsSeen(User $user): void
+    {
+        $changed = false;
+        foreach ($this->getDecisionNotifications($user) as $leave) {
+            $leave->setDecisionSeen(true);
+            $this->entityManager->persist($leave);
+            $changed = true;
+        }
+        if ($changed) {
+            $this->entityManager->flush();
+        }
     }
 
     public function find(int $id): ?TeamEvent
@@ -648,10 +684,10 @@ final class TeamEventService
         }
         $or->add('(e.allMyTeams = true AND e.createdBy IN (:teamMates))');
         $qb->setParameter('teamMates', array_values(array_unique($mates)));
-        // on the Events page people also see the events they added for others, so they can change them
-        if (!$personal) {
-            $or->add('e.createdBy = :me');
-        }
+        // people also see the events they added for others (a team they are not in, somebody else), on the
+        // Notifications page so they can change them, and on the dashboard so they see what they announced
+        // (was: only on the Notifications page - "if (!$personal) { ... }")
+        $or->add('e.createdBy = :me');
 
         $qb->andWhere($or);
     }

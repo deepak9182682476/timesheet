@@ -35,10 +35,13 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'kimai2_users')]
 #[ORM\UniqueConstraint(columns: ['username'])]
 #[ORM\UniqueConstraint(columns: ['email'])]
+#[ORM\UniqueConstraint(name: 'UNIQ_USERS_EMPLOYEE_ID', columns: ['account'])]
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
 #[UniqueEntity('username')]
 #[UniqueEntity('email')]
+// every user has their own Employee ID (stored as the staff / account number), entered by an administrator
+#[UniqueEntity('accountNumber', message: 'This Employee ID is already used by another user.', ignoreNull: true)]
 #[Serializer\ExclusionPolicy('all')]
 #[Exporter\Order(['id', 'username', 'alias', 'title', 'email', 'last_login', 'language', 'timezone', 'active', 'registeredAt', 'roles', 'teams', 'color', 'accountNumber'])]
 #[Exporter\Expose(name: 'email', label: 'email', exp: 'object.getEmail()')]
@@ -1202,7 +1205,9 @@ class User implements UserInterface, EquatableInterface, ThemeUserInterface, Pas
     public function setAccountNumber(?string $accountNumber): void
     {
         // @CloudRequired because SAML mapping could include a longer value
-        $this->accountNumber = StringHelper::ensureMaxLength($accountNumber, 30);
+        // $this->accountNumber = StringHelper::ensureMaxLength($accountNumber, 30);
+        $accountNumber = $accountNumber !== null ? trim($accountNumber) : null;
+        $this->accountNumber = StringHelper::ensureMaxLength($accountNumber === '' ? null : $accountNumber, 30);
     }
 
     public function isSystemAccount(): bool

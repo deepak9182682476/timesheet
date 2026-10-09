@@ -75,6 +75,10 @@ final class TimesheetApprovedLeaveValidator extends ConstraintValidator
         }
 
         foreach ($leaves as $leave) {
+            // a half day (or other part-day) comp-off: the rest of the day is worked and logged as usual
+            if ($leave->isPartDay()) {
+                continue;
+            }
             // a weekend or holiday inside a longer leave is not a leave day: working then stays possible
             if (!\in_array($day, $this->events->getLeaveDates($leave), true)) {
                 continue;

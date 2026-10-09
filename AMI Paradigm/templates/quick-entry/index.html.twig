@@ -37,8 +37,16 @@
                         {% for field in metaColumns|sort((a, b) => a.order <=> b.order) %}
                             <th style="min-width: 70px">{{ field.label }}</th>
                         {% endfor %}
+                        {# {% set weekEvents = week_events(days) %} #}
                         {% for id, week in days %}
                         <th class="text-center{% if week.day is weekend %} weekend{% endif %}{% if week.day is today %} today{% endif %}">
+{# events on top of the day are shown on Calendar Entry instead (were here):
+                            { # events of that day on top: activity (green, its hours are logged) and information (orange); details on mouse-over # }
+                            {% for item in weekEvents[week.day|date_format('Y-m-d')] ?? [] %}
+                                {% set details = item.title ~ ' (' ~ item.kindLabel ~ ', ' ~ item.typeLabel ~ ')' ~ (item.time is not empty ? "\n" ~ item.time : '') ~ "\nFor: " ~ item.audience ~ (item.description is not empty ? "\n" ~ item.description : '') %}
+                                <div class="qe-event qe-event-{{ item.kind }}" title="{{ details }}">&#9733; {{ item.title }}</div>
+                            {% endfor %}
+                            #}
                             {{ week.day|date_weekday }}
                         </th>
                         {% endfor %}
@@ -75,6 +83,10 @@
         form[name=quick_entry_form] .dataTable input.duration-hours::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         form[name=quick_entry_form] .dataTable input.duration-hours { -moz-appearance: textfield; }
         form[name=quick_entry_form] .dataTable tbody td:nth-child(-n+3) { min-width: 140px; max-width: 190px; }
+        /* events on top of a day: activity green, information orange */
+        .qe-event { font-size: .7rem; font-weight: 600; text-transform: none; letter-spacing: 0; border-radius: 3px; padding: 1px 4px; margin-bottom: 3px; max-width: 8rem; margin-left: auto; margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+        .qe-event-activity { background: var(--tblr-green-lt, #d5f0da); color: var(--tblr-green, #2fb344); }
+        .qe-event-information { background: var(--tblr-orange-lt, #fde1cd); color: var(--tblr-orange, #f76707); }
     </style>
     <script>
         document.addEventListener('kimai.initialized', function(event) {

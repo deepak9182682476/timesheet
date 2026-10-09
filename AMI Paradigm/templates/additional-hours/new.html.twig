@@ -1,0 +1,148 @@
+{% extends 'base.html.twig' %}
+
+{# Additional hours: the day, why, how many hours and what was done. Before it is sent, the page checks that time
+   was logged that day and offers to log it (see AdditionalHoursController::checkTime). #}
+{% block main %}
+    {% set formOptions = {
+        'title': 'Claim Extra Hours',
+        'form': form,
+        'back': path('additional_hours'),
+        'submit_button': 'Submit for Approval'
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% form_theme form 'form/horizontal.html.twig' %}
+        {% block form_body %}
+            <div class="mb-3 row">
+                <div class="col-sm-2"></div>
+                <div class="col-sm-10 text-secondary small">
+                    Only for hours worked on a weekend, a festival or holiday, or a night shift. Your manager approves them;
+                    approved hours can be taken as a comp-off (Leave &gt; Apply for Leave &gt; Comp-off Leave) within {{ constant('App\\Entity\\AdditionalHours::CREDIT_VALID_DAYS') }} days.
+                </div>
+            </div>
+            {{ form_row(form.workDate) }}
+            {{ form_row(form.reason) }}
+            {{ form_row(form.hours) }}
+            <div class="mb-3 row">
+                <div class="col-sm-2 col-form-label">Comp-off worth</div>
+                <div class="col-sm-10 pt-2"><span class="badge bg-secondary-lt" id="additional-hours-credit">Enter the hours</span></div>
+            </div>
+            {{ form_row(form.description) }}
+            {{ form_rest(form) }}
+        {% endblock %}
+    {% endembed %}
+
+    {# asked when no time is logged on that day #}
+    <div class="modal modal-blur fade" id="additional-hours-time-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">No Time Logged</h5>
+                    <button type="button" class="btn-close additional-hours-close" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    You have not logged any time on <strong id="additional-hours-day"></strong>.
+                    Please fill your timesheet for that day as well. You can send the request now and log the time afterwards.
+                </div>
+                <div class="modal-footer">
+                    <a href="#" class="btn btn-link link-secondary me-auto additional-hours-close">Cancel</a>
+                    <a href="#" class="btn" id="additional-hours-log" target="_blank">Fill Timesheet</a>
+                    <button type="button" class="btn btn-primary" id="additional-hours-submit-anyway">Submit Anyway</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var dayHours = {{ day_hours }};
+            var input = document.querySelector('.additional-hours-input');
+            var badge = document.getElementById('additional-hours-credit');
+            function credit() {
+                var hours = parseFloat(input.value);
+                var quarters = isNaN(hours) ? 0 : Math.min(4, Math.floor((hours + 0.0001) / (dayHours / 4)));
+                var labels = ['Less than a quarter day', 'Quarter day', 'Half day', 'Three quarters of a day', 'Full day'];
+                badge.textContent = isNaN(hours) ? 'Enter the hours' : labels[quarters] + (quarters > 0 ? ' (' + (quarters / 4) + ' day)' : '');
+                badge.className = 'badge ' + (quarters > 0 ? 'bg-green-lt' : 'bg-secondary-lt');
+            }
+            if (input !== null) { input.addEventListener('input', credit); credit(); }
+
+            // before sending: is time logged on that day?
+            var form = input !== null ? input.form : null;
+            var modal = document.getElementById('additional-hours-time-modal');
+            var confirmed = false;
+            function readDate(field) {
+                var format = field.dataset.format || 'YYYY-MM-DD';
+                var names = format.match(/[A-Za-z]+/g) || [];
+                var numbers = field.value.match(/\d+/g) || [];
+                if (names.length !== numbers.length) { return null; }
+                var parts = {};
+                names.forEach(function (name, index) { parts[name.charAt(0).toUpperCase()] = parseInt(numbers[index], 10); });
+                if (!parts.Y || !parts.M || !parts.D) { return null; }
+                return parts.Y + '-' + (parts.M < 10 ? '0' : '') + parts.M + '-' + (parts.D < 10 ? '0' : '') + parts.D;
+            }
+            function show() { modal.style.display = 'block'; modal.classList.add('show'); var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'additional-hours-backdrop'; document.body.appendChild(b); }
+            function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('additional-hours-backdrop'); if (b) { b.remove(); } }
+            modal.querySelectorAll('.additional-hours-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
+            document.getElementById('additional-hours-submit-anyway').addEventListener('click', function () { confirmed = true; hide(); form.requestSubmit ? form.requestSubmit() : form.submit(); });
+            document.getElementById('additional-hours-log').addEventListener('click', function () { hide(); });
+            // the date is checked as soon as it is picked, not only after "Submit for Approval"
+            var dateField = form !== null ? form.querySelector('input[id$="_workDate"]') : null;
+            var dateRow = dateField !== null ? dateField.closest('.row') : null;
+            var dateError = document.createElement('div');
+            dateError.className = 'invalid-feedback d-block';
+            if (dateField !== null) { (dateField.closest('.input-group') || dateField).insertAdjacentElement('afterend', dateError); }
+            var lastChecked = null;
+            function dateProblem() {
+                var day = readDate(dateField);
+                if (day === null) { return ''; }
+                var picked = new Date(day + 'T00:00:00');
+                var today = new Date(); today.setHours(0, 0, 0, 0);
+                var oldest = new Date(today.getTime()); oldest.setDate(oldest.getDate() - {{ constant('App\\Entity\\AdditionalHours::CREDIT_VALID_DAYS') }});
+                if (picked > today) { return 'The day cannot be in the future.'; }
+                if (picked < oldest) { return 'Extra hours can be claimed up to {{ constant('App\\Entity\\AdditionalHours::CREDIT_VALID_DAYS') }} days back.'; }
+                var reason = form.querySelector('input[type="radio"][id*="_reason"]:checked');
+                if (reason !== null && reason.value === 'weekend' && picked.getDay() !== 0 && picked.getDay() !== 6) { return 'This day is not a Saturday or Sunday.'; }
+                return '';
+            }
+            function checkDate() {
+                if (dateField === null) { return true; }
+                var key = dateField.value + '|' + ((form.querySelector('input[type="radio"][id*="_reason"]:checked') || {}).value || '');
+                var problem = dateProblem();
+                if (key !== lastChecked) {
+                    lastChecked = key;
+                    // the message from the last "Submit" no longer applies once the date or reason changes
+                    dateRow.querySelectorAll('.invalid-feedback').forEach(function (el) { if (el !== dateError) { el.classList.add('d-none'); } });
+                }
+                dateError.textContent = problem;
+                dateField.classList.toggle('is-invalid', problem !== '');
+                return problem === '';
+            }
+            if (dateField !== null) {
+                ['change', 'input', 'blur'].forEach(function (name) { dateField.addEventListener(name, checkDate); });
+                form.querySelectorAll('input[type="radio"][id*="_reason"]').forEach(function (el) { el.addEventListener('change', checkDate); });
+                // the date picker fills the field without always firing an event
+                window.setInterval(checkDate, 700);
+            }
+
+            if (form !== null) {
+                form.addEventListener('submit', function (event) {
+                    if (!checkDate()) { event.preventDefault(); event.stopImmediatePropagation(); dateField.focus(); return; }
+                    if (confirmed) { return; }
+                    var day = readDate(form.querySelector('input[id$="_workDate"]'));
+                    if (day === null) { return; }
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    fetch('{{ path('additional_hours_check_time') }}?date=' + day, {credentials: 'same-origin'})
+                        .then(function (response) { return response.json(); })
+                        .then(function (result) {
+                            if (result.logged) { confirmed = true; form.requestSubmit ? form.requestSubmit() : form.submit(); return; }
+                            document.getElementById('additional-hours-day').textContent = result.label;
+                            document.getElementById('additional-hours-log').href = result.create;
+                            show();
+                        })
+                        .catch(function () { confirmed = true; form.submit(); });
+                }, true);
+            }
+        })();
+    </script>
+{% endblock %}

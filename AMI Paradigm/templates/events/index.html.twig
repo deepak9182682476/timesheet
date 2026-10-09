@@ -38,7 +38,11 @@
                             <div class="text-secondary small">{{ event.description|nl2br }}</div>
                         {% endif %}
                     </td>
-                    <td>{{ include('events/_badge.html.twig', {'event': event}) }}</td>
+                    <td>
+                        {{ include('events/_badge.html.twig', {'event': event}) }}
+                        {# activity: its hours are logged in the timesheets; information: only shown #}
+                        <div class="mt-1"><span class="badge {{ event.activity ? 'bg-green-lt' : 'bg-orange-lt' }}">{{ event.kindLabel }}</span></div>
+                    </td>
                     <td>{{ event.audienceLabel }}</td>
                     <td class="text-nowrap">
                         {% if editable[event.id] ?? false %}
@@ -90,7 +94,14 @@
                                 <span class="fw-bold">{{ leave.user.displayName }}</span>{% if leave.user.id == app.user.id %} <span class="text-secondary">(you)</span>{% endif %}
                                 {% if running %}<span class="badge bg-danger text-white ms-1">On leave today</span>{% endif %}
                             </td>
-                            <td>{{ leave.title == 'Optional holiday' ? 'Optional holiday' : 'Leave' }}{% if leave.days > 1 %} <span class="text-secondary">· {{ leave.days }} days</span>{% endif %}</td>
+                            {# <td>{{ leave.title == 'Optional holiday' ? 'Optional holiday' : 'Leave' }}{% if leave.days > 1 %} <span class="text-secondary">· {{ leave.days }} days</span>{% endif %}</td> #}
+                            <td>
+                                {% if leave.compOff %}
+                                    Comp-off Leave{% if leave.compCredit is not null %} <span class="text-secondary">· {{ leave_days_label(leave) }}</span>{% endif %}
+                                {% else %}
+                                    {{ leave.title == 'Optional holiday' ? 'Optional holiday' : 'Leave' }}{% if leave.days > 1 %} <span class="text-secondary">· {{ leave.days }} days</span>{% endif %}
+                                {% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                     </tbody>

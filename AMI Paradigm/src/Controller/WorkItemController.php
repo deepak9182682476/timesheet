@@ -62,14 +62,31 @@ final class WorkItemController extends AbstractController
         }
 
         return $this->render('work-items/index.html.twig', [
-            'page_setup' => new PageSetup('Project Mapping'),
+            'page_setup' => new PageSetup('Task Creation'),
             'projects' => $projects,
             'project' => $project,
             'levels' => $project !== null ? $this->models->getLevels($project) : [],
             'rows' => $project !== null ? $this->rows($project, $this->models->getChildren($project, null)) : [],
             'total' => $project !== null ? $this->models->countItems($project) : 0,
             'people' => $this->models->getAssignableUsers($user),
+            // who gets everything of this project: the people in its teams (Team Mapping); null when it has no team
+            'project_people' => $project !== null ? $this->projectPeople($project) : null,
         ]);
+    }
+
+    /**
+     * @return array<User>|null
+     */
+    private function projectPeople(Project $project): ?array
+    {
+        $ids = $this->models->getProjectMembers([(int) $project->getId()])[(int) $project->getId()] ?? null;
+        if ($ids === null) {
+            return null;
+        }
+        $people = $ids !== [] ? $this->entityManager->getRepository(User::class)->findBy(['id' => $ids]) : [];
+        usort($people, static fn (User $a, User $b) => strcasecmp($a->getDisplayName(), $b->getDisplayName()));
+
+        return $people;
     }
 
     /**
@@ -262,7 +279,7 @@ final class WorkItemController extends AbstractController
         }
 
         return $this->render('work-items/upload.html.twig', [
-            'page_setup' => new PageSetup('Project Mapping'),
+            'page_setup' => new PageSetup('Task Creation'),
             'project' => $project,
             'levels' => $this->models->getLevels($project),
             'headers' => $this->import->getHeaders($project),
@@ -414,9 +431,9 @@ final class WorkItemController extends AbstractController
                     $candidate->setProject($project);
                     $candidate->setParent($item->getParent());
                     $candidate->setCreatedBy($user);
-                    foreach ($item->getUsers() as $assigned) {
-                        $candidate->addUser($assigned);
-                    }
+                    // foreach ($item->getUsers() as $assigned) {
+                    //     $candidate->addUser($assigned);
+                    // }
                     $candidate->setName($name);
                 }
                 if (mb_strlen($name) > 150) {
@@ -448,7 +465,7 @@ final class WorkItemController extends AbstractController
         }
 
         return $this->render('work-items/edit.html.twig', [
-            'page_setup' => new PageSetup('Project Mapping'),
+            'page_setup' => new PageSetup('Task Creation'),
             'item' => $item,
             'project' => $project,
             'level_name' => $levelName,

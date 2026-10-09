@@ -62,7 +62,7 @@ final class ProjectModelSubscriber implements EventSubscriberInterface
         $definition->setOptions([
             'choices' => array_flip(WorkModelService::PROJECT_MODELS),
             'translation_domain' => false,
-            'help' => 'Agile: Epic > Feature > User Story > Activity > Task. Waterfall: Module > Sub Module > Business Req > Activity > Task. Managers and leads map these on the "Project mapping" page.',
+            'help' => 'Agile: Epic > Feature > User Story > Activity > Task. Waterfall: Module > Sub Module > Business Req > Activity > Task. Managers and leads create these on the "Task Creation" page.',
         ]);
         $definition->setIsRequired(true);
         $definition->setIsVisible(true);

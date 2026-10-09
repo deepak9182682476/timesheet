@@ -24,7 +24,8 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 final class LeaveApplyForm extends AbstractType
 {
     /** Kinds of leave offered in the form; the chosen one becomes the name shown on the dashboard */
-    public const KINDS = ['Casual leave', 'Sick leave', 'Earned leave', 'Comp off', 'Optional holiday', 'Other leave'];
+    // public const KINDS = ['Casual leave', 'Sick leave', 'Earned leave', 'Comp off', 'Optional holiday', 'Other leave'];
+    public const KINDS = ['Casual leave', 'Sick leave', 'Earned leave', TeamEvent::COMP_OFF, 'Optional holiday', 'Other leave'];
 
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -55,6 +56,16 @@ final class LeaveApplyForm extends AbstractType
                 'disabled' => $options['office'] !== null,
                 'help' => $options['office'] !== null ? 'Your office, set by the administrator.' : null,
             ])
+            // only for "Comp off": the approved additional hours it is taken for (see AdditionalHoursService)
+            ->add('compCredit', ChoiceType::class, [
+                'label' => 'Comp-off for',
+                'mapped' => false,
+                'required' => false,
+                'choices' => $options['credits'],
+                'placeholder' => $options['credits'] === [] ? 'No comp-off available' : 'Choose the extra hours claim to use',
+                'translation_domain' => false,
+                'help' => 'Approved extra hours claims (weekend, festival or holiday, night shift) can be used within 30 days of the day worked.',
+            ])
             ->add('description', TextareaType::class, [
                 'label' => 'Reason',
                 'required' => false,
@@ -71,6 +82,8 @@ final class LeaveApplyForm extends AbstractType
             'csrf_field_name' => '_token',
             'csrf_token_id' => 'leave_apply',
             'office' => null,
+            // label => id of the approved additional hours that can still be taken as comp-off
+            'credits' => [],
         ]);
         $resolver->setAllowedTypes('office', ['null', 'string']);
     }

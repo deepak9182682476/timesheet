@@ -29,7 +29,8 @@ final class TimesheetPhaseSubscriber implements EventSubscriberInterface
      * Not offered in the Category dropdown. "Leave & Time Off" is still used by approved leave, which is
      * logged automatically (LeaveTimesheetSync), so those entries keep showing in Log Time and the charts.
      */
-    public const HIDDEN = ['Pre-Sales & Practice', \App\TeamEvent\LeaveTimesheetSync::LEAVE_PHASE];
+    // "Team Events" is logged automatically from activity events (TeamEventTimesheetSync)
+    public const HIDDEN = ['Pre-Sales & Practice', \App\TeamEvent\LeaveTimesheetSync::LEAVE_PHASE, \App\TeamEvent\TeamEventTimesheetSync::PHASE];
 
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {

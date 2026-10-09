@@ -37,6 +37,17 @@ final class TeamEventEditForm extends AbstractType
                 'choices' => $options['types'],
                 'translation_domain' => false,
             ])
+            // activity: its hours are logged in everybody's timesheet; information: only shown
+            ->add('kind', ChoiceType::class, [
+                'label' => 'Kind',
+                'choices' => [
+                    'Activity (logged in the timesheets of everybody it applies to)' => TeamEvent::KIND_ACTIVITY,
+                    'Information only (shown, nothing is logged)' => TeamEvent::KIND_INFORMATION,
+                ],
+                'expanded' => true,
+                'translation_domain' => false,
+                'help' => 'An activity needs a start and an end time: those hours are logged under Non-Project Activities > Team Events.',
+            ])
             ->add('startDate', DatePickerType::class, [
                 'label' => 'From',
             ])

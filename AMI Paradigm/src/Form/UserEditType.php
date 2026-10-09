@@ -61,9 +61,18 @@ class UserEditType extends AbstractType
             'required' => false,
         ]);
 
+        // $builder->add('accountNumber', TextType::class, [
+        //     'label' => 'account_number',
+        //     'required' => false,
+        // ]);
+        // Employee ID: required and unique (see User), entered by an administrator; others only see it
         $builder->add('accountNumber', TextType::class, [
             'label' => 'account_number',
-            'required' => false,
+            'required' => $options['edit_employee_id'],
+            'disabled' => !$options['edit_employee_id'],
+            'help' => $options['edit_employee_id'] ? 'Unique for every user, for example EMP1023.' : null,
+            'translation_domain' => 'messages',
+            'constraints' => $options['edit_employee_id'] ? [new \Symfony\Component\Validator\Constraints\NotBlank(message: 'Enter the Employee ID.')] : [],
         ]);
 
         if ($this->configuration->isThemeAllowAvatarUrls()) {
@@ -132,6 +141,8 @@ class UserEditType extends AbstractType
             'include_supervisor' => true,
             'include_username' => false,
             'include_password_reset' => true,
+            // only administrators enter or change the Employee ID
+            'edit_employee_id' => true,
         ]);
     }
 }

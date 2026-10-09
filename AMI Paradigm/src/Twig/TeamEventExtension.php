@@ -24,7 +24,8 @@ final class TeamEventExtension extends AbstractExtension
     public function __construct(
         private readonly TeamEventService $events,
         private readonly Security $security,
-        private readonly \App\Task\TaskService $tasks
+        private readonly \App\Task\TaskService $tasks,
+        private readonly \App\TeamEvent\AdditionalHoursService $additionalHours,
     )
     {
     }
@@ -33,10 +34,13 @@ final class TeamEventExtension extends AbstractExtension
     {
         return [
             new TwigFunction('team_events_by_day', [$this, 'eventsByDay']),
+            new TwigFunction('week_events', [$this, 'weekEvents']),
             new TwigFunction('leave_notifications', [$this, 'leaveNotifications']),
+            new TwigFunction('additional_hours_notifications', [$this, 'additionalHoursNotifications']),
             new TwigFunction('task_notifications', [$this, 'taskNotifications']),
             new TwigFunction('approved_leave_days', [$this, 'approvedLeaveDays']),
             new TwigFunction('leave_days', [$this, 'leaveDays']),
+            new TwigFunction('leave_days_label', [$this, 'leaveDaysLabel']),
         ];
     }
 
@@ -50,6 +54,22 @@ final class TeamEventExtension extends AbstractExtension
         } catch (\Throwable) {
             return $leave->getWorkingDays();
         }
+    }
+
+    /**
+     * "2 days", or for a comp-off the part of the day its additional hours are worth ("Half day (0.5 day)").
+     */
+    public function leaveDaysLabel(\App\Entity\TeamEvent $leave): string
+    {
+        $credit = $leave->getCompCredit();
+        if ($leave->isCompOff() && $credit !== null) {
+            $days = (float) $credit->getCreditDays();
+
+            return $credit->getCreditLabel() . ($days < 1 ? ' (' . $days . ' day)' : '');
+        }
+        $days = $this->leaveDays($leave);
+
+        return $days . ($days === 1 ? ' day' : ' days');
     }
 
     /**
@@ -69,6 +89,10 @@ final class TeamEventExtension extends AbstractExtension
             $days = [];
             foreach ($this->events->getMyLeave($user) as $leave) {
                 if ($leave->getStatus() !== \App\Entity\TeamEvent::STATUS_APPROVED) {
+                    continue;
+                }
+                // a half day (or other part-day) comp-off leaves the rest of the day to work and log time
+                if ($leave->isPartDay()) {
                     continue;
                 }
                 foreach ($this->events->getLeaveDates($leave) as $date) {
@@ -107,6 +131,31 @@ final class TeamEventExtension extends AbstractExtension
      *
      * @return array<\App\Entity\TeamEvent>
      */
+    /**
+     * For the bell: additional hours waiting for this person's decision, and the person's own additional hours and
+     * leave (comp-off included) that were just approved or rejected.
+     *
+     * @return array{pending: array<\App\Entity\AdditionalHours>, hours: array<\App\Entity\AdditionalHours>, leave: array<\App\Entity\TeamEvent>}
+     */
+    public function additionalHoursNotifications(): array
+    {
+        $user = $this->security->getUser();
+        $empty = ['pending' => [], 'hours' => [], 'leave' => []];
+        if (!($user instanceof User)) {
+            return $empty;
+        }
+
+        try {
+            return [
+                'pending' => $this->additionalHours->getTeamRequests($user, true),
+                'hours' => $this->additionalHours->getDecisionNotifications($user),
+                'leave' => $this->events->getDecisionNotifications($user),
+            ];
+        } catch (\Throwable) {
+            return $empty;
+        }
+    }
+
     public function leaveNotifications(): array
     {
         $user = $this->security->getUser();
@@ -125,6 +174,55 @@ final class TeamEventExtension extends AbstractExtension
     /**
      * @return array<string, array<string>> event titles keyed by date as Y-m-d
      */
+    /**
+     * The events of the logged-in person on each day, for the top of the days in Bulk Entry (Week):
+     * activities (team lunch: their hours are logged) and information (the head visits). Leave is left out.
+     *
+     * @param array<string, mixed> $days keyed by date as Y-m-d
+     * @return array<string, array<array{title: string, kind: string, kindLabel: string, typeLabel: string, time: string, description: string, audience: string}>>
+     */
+    public function weekEvents(array $days): array
+    {
+        $user = $this->security->getUser();
+        if (!($user instanceof User) || $days === []) {
+            return [];
+        }
+        $dates = array_keys($days);
+        sort($dates);
+
+        try {
+            $byDay = [];
+            foreach ($this->events->getEventsForUser($user, new \DateTime($dates[0]), new \DateTime(end($dates)), null, true) as $event) {
+                if ($event->getType() === \App\Entity\TeamEvent::TYPE_LEAVE) {
+                    continue;
+                }
+                $time = '';
+                if ($event->getStartTime() !== null) {
+                    $time = $event->getStartTime()->format('H:i') . ($event->getEndTime() !== null ? ' - ' . $event->getEndTime()->format('H:i') : '');
+                }
+                $item = [
+                    'title' => (string) $event->getTitle(),
+                    'kind' => $event->getKind(),
+                    'kindLabel' => $event->getKindLabel(),
+                    'typeLabel' => $event->getTypeLabel(),
+                    'time' => $time,
+                    'description' => (string) $event->getDescription(),
+                    'audience' => $event->getAudienceLabel(),
+                ];
+                foreach ($dates as $date) {
+                    if ($date >= $event->getStartDate()->format('Y-m-d') && $date <= $event->getEndDate()->format('Y-m-d')) {
+                        $byDay[$date][] = $item;
+                    }
+                }
+            }
+
+            return $byDay;
+        } catch (\Throwable) {
+            // a marker must never break the page it decorates
+            return [];
+        }
+    }
+
     public function eventsByDay(?\DateTimeInterface $from, ?\DateTimeInterface $to): array
     {
         $user = $this->security->getUser();

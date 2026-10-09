@@ -1,3 +1,9 @@
 {# coloured label for an event type #}
-{% set typeColors = {'team_outing': 'primary', 'holiday': 'success', 'leave': 'warning', 'training': 'info', 'other': 'secondary'} %}
-<span class="badge bg-{{ typeColors[event.type] ?? 'secondary' }} text-white">{{ event.typeLabel }}</span>
+{# {% set typeColors = {'team_outing': 'primary', 'holiday': 'success', 'leave': 'warning', 'training': 'info', 'other': 'secondary'} %} #}
+{# leave orange and comp-off purple, the same colours as their entries in the calendar and the bar graph #}
+{% set typeColors = {'team_outing': 'primary', 'holiday': 'success', 'leave': 'orange', 'training': 'info', 'other': 'secondary'} %}
+{% if event.compOff %}
+    <span class="badge bg-purple text-white">Comp-off Leave</span>
+{% else %}
+    <span class="badge bg-{{ typeColors[event.type] ?? 'secondary' }} text-white">{{ event.typeLabel }}</span>
+{% endif %}

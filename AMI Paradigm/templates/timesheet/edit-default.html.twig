@@ -142,6 +142,7 @@
                 {% endfor %}
                 {{ form_row(form.metaFields) }}
             {% endif %}
+            {# "Extended settings" (rates, billable, exported) are hidden: the fields stay in the form with their values, out of sight.
             {% if form.fixedRate is defined or form.hourlyRate is defined or form.internalRate is defined or form.billable is defined or form.billableMode is defined or form.exported is defined %}
                 {% embed '@theme/embeds/collapsible.html.twig' with {id: 'timesheet_extended_settings'} %}
                     {% import "macros/widgets.html.twig" as widgets %}
@@ -168,6 +169,12 @@
                 {% endembed %}
             {% endif %}
 
+            #}
+            <div class="d-none">
+                {% for field in ['fixedRate', 'hourlyRate', 'internalRate', 'billable', 'billableMode', 'exported'] %}
+                    {% if attribute(form, field) is defined %}{{ form_row(attribute(form, field)) }}{% endif %}
+                {% endfor %}
+            </div>
             {{ form_rest(form) }}
         {% endblock %}
     {% endembed %}

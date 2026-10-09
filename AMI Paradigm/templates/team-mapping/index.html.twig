@@ -1,7 +1,7 @@
 {% extends 'base.html.twig' %}
 {% import "macros/widgets.html.twig" as widgets %}
 
-{# Team Mapping: Project Managers and Project Leads put their teams together (see TeamMappingController) #}
+{# Team Allocation (was Team Mapping): Project Managers and Project Leads put their teams together (see TeamMappingController) #}
 {% block main %}
     {% set csrf = csrf_token(token) %}
 
@@ -53,22 +53,27 @@
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label required" for="team-name">Team name</label>
-                            <input type="text" class="form-control" id="team-name" name="name" maxlength="100" required autofocus placeholder="For example hmel">
+                            <input type="text" class="form-control team-name-input" id="team-name" name="name" maxlength="100" required autofocus placeholder="For example hmel">
+                            <div class="invalid-feedback">Team name already exists. Choose another name.</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label" for="team-projects">Projects</label>
                             <select class="form-select team-select" id="team-projects" name="projects[]" multiple>
-                                {% for id, name in projects %}<option value="{{ id }}">{{ name }}</option>{% endfor %}
+                                {% for id, name in projects %}<option value="{{ id }}" data-start="{{ project_dates[id].start ?? '' }}" data-end="{{ project_dates[id].end ?? '' }}">{{ name }}</option>{% endfor %}
                             </select>
                             <div class="form-hint">A linked project is offered only to the people of its teams.</div>
+                            {# <div class="team-project-dates" data-for="team-projects"></div> - now a full-width row below #}
                         </div>
                         <div class="col-md-4 mb-3">
-                            <label class="form-label" for="my-role">Your roles in this team</label>
+                            <label class="form-label" for="my-role">Your roles in the project</label>
                             {% set myDefault = is_granted('ROLE_ADMIN') ? 'Project Manager' : 'Project Lead' %}
                             <select class="form-select team-select" id="my-role" name="my_role[]" multiple data-create="1">
                                 {% for role in roles %}<option value="{{ role }}"{% if role == myDefault %} selected{% endif %}>{{ role }}</option>{% endfor %}
                             </select>
                             <div class="form-hint">You are the lead of the team you create.</div>
+                        </div>
+                        <div class="col-12">
+                            <div class="team-project-dates" data-for="team-projects"></div>
                         </div>
                     </div>
                 </div>
@@ -96,16 +101,20 @@
                     <div class="row align-items-end">
                         <div class="col-md-4 mb-3">
                             <label class="form-label required" for="team-name">Team name</label>
-                            <input type="text" class="form-control" id="team-name" name="name" maxlength="100" required value="{{ selected.name }}">
+                            <input type="text" class="form-control team-name-input" id="team-name" name="name" maxlength="100" required value="{{ selected.name }}">
+                            <div class="invalid-feedback">Team name already exists. Choose another name.</div>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label" for="team-projects">Projects</label>
                             <select class="form-select team-select" id="team-projects" name="projects[]" multiple>
-                                {% for id, name in projects %}<option value="{{ id }}"{% if id in linked %} selected{% endif %}>{{ name }}</option>{% endfor %}
+                                {% for id, name in projects %}<option value="{{ id }}" data-start="{{ project_dates[id].start ?? '' }}" data-end="{{ project_dates[id].end ?? '' }}"{% if id in linked %} selected{% endif %}>{{ name }}</option>{% endfor %}
                             </select>
                         </div>
                         <div class="col-md-2 mb-3">
                             <button type="submit" class="btn w-100">{{ 'action.save'|trans }}</button>
+                        </div>
+                        <div class="col-12">
+                            <div class="team-project-dates" data-for="team-projects"></div>
                         </div>
                     </div>
                 </div>
@@ -122,9 +131,9 @@
                     <thead>
                     <tr>
                         <th>Person</th>
-                        <th>Role in the system</th>
-                        <th style="min-width: 280px">Role in this team</th>
-                        <th class="text-center">Team lead</th>
+                        <th>Role in the System</th>
+                        <th style="min-width: 280px">Role in the Project</th>
+                        {# <th class="text-center">Team lead</th> #}
                         <th class="w-1"></th>
                     </tr>
                     </thead>
@@ -149,9 +158,10 @@
                                     {% for role in roles %}<option value="{{ role }}"{% if role in mine %} selected{% endif %}>{{ role }}</option>{% endfor %}
                                 </select>
                             </td>
+                            {# Team lead column hidden: who leads a team stays as it is (the person who created it)
                             <td class="text-center">
                                 <input type="checkbox" class="form-check-input" name="lead" value="1" form="{{ formId }}"{% if member.teamlead %} checked{% endif %}>
-                            </td>
+                            </td> #}
                             <td class="text-nowrap">
                                 <form method="post" id="{{ formId }}" action="{{ path('team_mapping_member', {'id': selected.id}) }}" class="d-inline">
                                     <input type="hidden" name="_token" value="{{ csrf }}">
@@ -181,9 +191,9 @@
                                 {% for role in roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
                             </select>
                         </td>
-                        <td class="text-center">
+                        {# <td class="text-center">
                             <input type="checkbox" class="form-check-input" name="lead" value="1" form="member-new">
-                        </td>
+                        </td> #}
                         <td>
                             <form method="post" id="member-new" action="{{ path('team_mapping_member', {'id': selected.id}) }}">
                                 <input type="hidden" name="_token" value="{{ csrf }}">
@@ -195,9 +205,9 @@
                 </table>
             </div>
             <div class="card-footer text-secondary small">
-                "Role in the system" (Employee, Project Lead, Project Manager) is set by the administrator.
-                "Role in this team" is what the person does here: pick one or more from the list, or type a new one and press Enter.
-                Team leads can change this team. Only active people can be added.
+                "Role in the System" (Employee, Project Lead, Project Manager) is set by the administrator.
+                "Role in the Project" is what the person does in this project: pick one or more from the list, or type a new one and press Enter.
+                Only active people can be added.
             </div>
         </div>
     {% endif %}
@@ -205,6 +215,21 @@
     <style>
         .team-pills .nav-link { border: 1px solid var(--tblr-border-color); margin: .25rem .5rem .25rem 0; }
         .team-pills .nav-link.active { font-weight: 600; }
+        /* project timeline under the team's projects */
+        .team-project-dates .pt-title { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--tblr-secondary); margin: .25rem 0 .5rem; }
+        .team-project-dates .pt-list { display: flex; flex-wrap: wrap; gap: .75rem; }
+        .team-project-dates .pt-card { min-width: 260px; flex: 0 1 320px; border: 1px solid var(--tblr-border-color); border-left: 4px solid var(--tblr-primary); border-radius: 6px; padding: .65rem .85rem; background: var(--tblr-bg-surface); }
+        .team-project-dates .pt-ongoing { border-left-color: var(--tblr-green); }
+        .team-project-dates .pt-upcoming { border-left-color: var(--tblr-azure); }
+        .team-project-dates .pt-ended, .team-project-dates .pt-unset { border-left-color: var(--tblr-border-color-dark, #c7ccd4); }
+        .team-project-dates .pt-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .45rem; }
+        .team-project-dates .pt-name { font-weight: 600; }
+        .team-project-dates .pt-range { display: flex; align-items: center; gap: .75rem; }
+        .team-project-dates .pt-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--tblr-secondary); }
+        .team-project-dates .pt-value { font-weight: 500; white-space: nowrap; }
+        .team-project-dates .pt-unset { color: var(--tblr-secondary); font-weight: 400; font-style: italic; }
+        .team-project-dates .pt-arrow { color: var(--tblr-secondary); font-size: 1.1rem; padding-top: .8rem; }
+        .team-project-dates .pt-length { margin-top: .35rem; font-size: .75rem; color: var(--tblr-secondary); }
     </style>
     <script type="text/javascript">
         document.querySelectorAll('.team-delete-form').forEach(function (form) {
@@ -221,6 +246,122 @@
                 }
             });
         });
+        // ---- a team name that is taken (whatever the capitals and spaces: "citms", "CITMS", "CiTms") is refused at once
+        (function () {
+            var taken = {{ taken_names|json_encode|raw }};
+            function key(name) { return name.replace(/\s+/g, ' ').trim().toLowerCase(); }
+            document.querySelectorAll('.team-name-input').forEach(function (input) {
+                var form = input.form;
+                function check() {
+                    var bad = taken.indexOf(key(input.value)) !== -1;
+                    input.classList.toggle('is-invalid', bad);
+                    input.setCustomValidity(bad ? 'Team name already exists.' : '');
+                }
+                input.addEventListener('input', check);
+                check();
+                form.addEventListener('submit', function (event) {
+                    check();
+                    if (input.classList.contains('is-invalid')) { event.preventDefault(); input.focus(); }
+                });
+            });
+        })();
+
+        /* earlier: a plain table Project | From | To
+        // ---- the start and end date of the picked projects, as the administrator entered them (shown only)
+        function showProjectDates() {
+            document.querySelectorAll('.team-project-dates').forEach(function (box) {
+                var select = document.getElementById(box.dataset.for);
+                if (select === null) { return; }
+                var picked = Array.prototype.filter.call(select.options, function (option) { return option.selected; });
+                box.innerHTML = '';
+                if (picked.length === 0) { return; }
+                var table = document.createElement('table');
+                table.className = 'table table-sm table-borderless mb-0 mt-2 small';
+                var head = table.createTHead().insertRow();
+                ['Project', 'From', 'To'].forEach(function (label) {
+                    var th = document.createElement('th');
+                    th.className = 'text-secondary fw-normal ps-0';
+                    th.textContent = label;
+                    head.appendChild(th);
+                });
+                var body = table.createTBody();
+                picked.forEach(function (option) {
+                    var row = body.insertRow();
+                    [option.textContent, option.dataset.start || 'Not set', option.dataset.end || 'Not set'].forEach(function (text, index) {
+                        var cell = row.insertCell();
+                        cell.className = 'ps-0' + (index > 0 && text === 'Not set' ? ' text-secondary' : '');
+                        cell.textContent = text;
+                    });
+                });
+                box.appendChild(table);
+            });
+        }
+        */
+        // ---- the timeline of the picked projects: start and end date as the administrator entered them (shown only)
+        var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        function parseDay(value) {
+            if (!value) { return null; }
+            var p = value.split('-');
+            return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+        }
+        function writeDay(date) {
+            return (date.getDate() < 10 ? '0' : '') + date.getDate() + ' ' + MONTHS[date.getMonth()] + ' ' + date.getFullYear();
+        }
+        function el(tag, className, text) {
+            var node = document.createElement(tag);
+            if (className) { node.className = className; }
+            if (text !== undefined) { node.textContent = text; }
+            return node;
+        }
+        function showProjectDates() {
+            var today = new Date(); today.setHours(0, 0, 0, 0);
+            document.querySelectorAll('.team-project-dates').forEach(function (box) {
+                var select = document.getElementById(box.dataset.for);
+                if (select === null) { return; }
+                var picked = Array.prototype.filter.call(select.options, function (option) { return option.selected; });
+                box.innerHTML = '';
+                if (picked.length === 0) { return; }
+                box.appendChild(el('div', 'pt-title', 'Project Timeline'));
+                var list = el('div', 'pt-list');
+                picked.forEach(function (option) {
+                    var start = parseDay(option.dataset.start);
+                    var end = parseDay(option.dataset.end);
+                    var status = null;
+                    if (start !== null && today < start) { status = ['Upcoming', 'bg-azure-lt']; }
+                    else if (end !== null && today > end) { status = ['Ended', 'bg-secondary-lt']; }
+                    else if (start !== null || end !== null) { status = ['Ongoing', 'bg-green-lt']; }
+
+                    var card = el('div', 'pt-card pt-' + (status !== null ? status[0].toLowerCase() : 'unset'));
+                    var head = el('div', 'pt-head');
+                    head.appendChild(el('span', 'pt-name', option.textContent));
+                    if (status !== null) { head.appendChild(el('span', 'badge ' + status[1], status[0])); }
+                    card.appendChild(head);
+
+                    var range = el('div', 'pt-range');
+                    [['From', start], ['To', end]].forEach(function (part, index) {
+                        var cell = el('div', 'pt-date');
+                        cell.appendChild(el('div', 'pt-label', part[0]));
+                        cell.appendChild(el('div', 'pt-value' + (part[1] === null ? ' pt-unset' : ''), part[1] !== null ? writeDay(part[1]) : 'Not set'));
+                        range.appendChild(cell);
+                        if (index === 0) { range.appendChild(el('div', 'pt-arrow', '\u2192')); }
+                    });
+                    card.appendChild(range);
+
+                    if (start !== null && end !== null && end >= start) {
+                        var months = Math.round((end - start) / (1000 * 60 * 60 * 24 * 30.44));
+                        var days = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                        card.appendChild(el('div', 'pt-length', months >= 1 ? months + (months === 1 ? ' month' : ' months') : days + (days === 1 ? ' day' : ' days')));
+                    }
+                    list.appendChild(card);
+                });
+                box.appendChild(list);
+            });
+        }
+        document.addEventListener('change', function (event) {
+            if (event.target.id === 'team-projects') { showProjectDates(); }
+        });
+        showProjectDates();
+
         // searchable dropdowns, like the rest of the app
         document.addEventListener('kimai.initialized', function (event) {
             const selects = event.detail.kimai.getPlugin('form-select');

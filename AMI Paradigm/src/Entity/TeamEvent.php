@@ -38,6 +38,17 @@ class TeamEvent
         self::TYPE_OTHER => 'Other',
     ];
 
+    /**
+     * Two kinds of event:
+     * - activity: something people spend time on (team lunch, training). Its hours are logged automatically in the
+     *   timesheet of everybody it applies to (TeamEventTimesheetSync), so it shows in Log Time and the bar graph.
+     * - information: something to know (the head visits, come in formals). Shown in Notifications and on that day
+     *   in Bulk Entry (Week); nothing is logged.
+     */
+    public const KIND_ACTIVITY = 'activity';
+    public const KIND_INFORMATION = 'information';
+    public const KINDS = [self::KIND_ACTIVITY => 'Activity', self::KIND_INFORMATION => 'Information'];
+
     /** Leave an employee applied for waits as "pending" until a manager decides; everything else is "approved" */
     public const STATUS_PENDING = 'pending';
     public const STATUS_APPROVED = 'approved';
@@ -115,6 +126,77 @@ class TeamEvent
     /** True once the days of this approved leave were put into the person's timesheet */
     #[ORM\Column(name: 'timesheet_synced', type: Types::BOOLEAN, nullable: false, options: ['default' => false])]
     private bool $timesheetSynced = false;
+
+    /** The leave type of a comp-off: it uses a credit from approved additional hours */
+    // public const COMP_OFF = 'Comp off';
+    public const COMP_OFF = 'Comp-off Leave';
+
+    /** Comp-off: the approved additional hours it is taken for */
+    #[ORM\ManyToOne(targetEntity: AdditionalHours::class)]
+    #[ORM\JoinColumn(name: 'comp_credit_id', nullable: true, onDelete: 'SET NULL')]
+    private ?AdditionalHours $compCredit = null;
+
+    /** False once a manager decided on the person's leave, until the person has looked at it (the bell) */
+    #[ORM\Column(name: 'decision_seen', type: Types::BOOLEAN, nullable: false, options: ['default' => true])]
+    private bool $decisionSeen = true;
+
+    public function isCompOff(): bool
+    {
+        return $this->type === self::TYPE_LEAVE && $this->title === self::COMP_OFF;
+    }
+
+    /**
+     * A comp-off worth less than a full day (a quarter, half or three quarters): the rest of that day
+     * is a normal working day, so time can be logged on it.
+     */
+    public function isPartDay(): bool
+    {
+        return $this->isCompOff() && $this->compCredit !== null && $this->compCredit->getCreditDays() < 1;
+    }
+
+    public function getCompCredit(): ?AdditionalHours
+    {
+        return $this->compCredit;
+    }
+
+    public function setCompCredit(?AdditionalHours $credit): void
+    {
+        $this->compCredit = $credit;
+    }
+
+    public function isDecisionSeen(): bool
+    {
+        return $this->decisionSeen;
+    }
+
+    public function setDecisionSeen(bool $seen): void
+    {
+        $this->decisionSeen = $seen;
+    }
+
+    /** Activity (logged in the timesheets) or information (only shown), see KINDS */
+    #[ORM\Column(name: 'event_kind', type: Types::STRING, length: 20, nullable: false, options: ['default' => 'information'])]
+    private string $kind = self::KIND_INFORMATION;
+
+    public function getKind(): string
+    {
+        return $this->kind;
+    }
+
+    public function setKind(?string $kind): void
+    {
+        $this->kind = $kind === self::KIND_ACTIVITY ? self::KIND_ACTIVITY : self::KIND_INFORMATION;
+    }
+
+    public function isActivity(): bool
+    {
+        return $this->kind === self::KIND_ACTIVITY;
+    }
+
+    public function getKindLabel(): string
+    {
+        return self::KINDS[$this->kind] ?? 'Information';
+    }
 
     /** True for an event that is for every team of the person who added it ("All my teams") */
     #[ORM\Column(name: 'all_my_teams', type: Types::BOOLEAN, nullable: false, options: ['default' => false])]

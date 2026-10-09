@@ -6,9 +6,9 @@
 {% for row in rows %}
     {% set item = row.item %}
     <tr class="wi-row" data-id="{{ item.id }}" data-level="{{ item.level }}" data-children="{{ row.children }}">
-        <td class="w-1 pe-0">
+        {# <td class="w-1 pe-0">
             <input type="checkbox" class="form-check-input wi-check" value="{{ item.id }}" aria-label="Select {{ item.name }}">
-        </td>
+        </td> #}
         <td>
             <div class="d-flex align-items-start" style="padding-left: {{ flat ? 0 : item.level * 26 }}px">
                 {% if not flat and row.children > 0 %}
@@ -28,6 +28,7 @@
                 </div>
             </div>
         </td>
+        {# "Assigned to": nothing is assigned to single people any more (everything is for the project's teams)
         <td>
             {% if item.users is not empty %}
                 {% for person in item.users|sort((a, b) => a.displayName|lower <=> b.displayName|lower) %}
@@ -39,7 +40,7 @@
                     <span class="badge bg-secondary-lt me-1">{{ person.displayName }}</span>
                 {% endfor %}
             {% elseif row.below is not empty %}
-                {# nobody on the item itself, but its tasks (or other items below) are assigned: those people pick it on the way there #}
+                { # nobody on the item itself, but its tasks (or other items below) are assigned: those people pick it on the way there # }
                 <span class="text-secondary small">Assigned further down:</span>
                 {% for person in row.below|sort((a, b) => a.displayName|lower <=> b.displayName|lower) %}
                     <span class="badge bg-secondary-lt me-1">{{ person.displayName }}</span>
@@ -48,6 +49,7 @@
                 <span class="text-danger">Nobody yet &ndash; it cannot be picked on a time entry</span>
             {% endif %}
         </td>
+        #}
         <td class="text-nowrap">
             <div class="btn-list flex-nowrap justify-content-end">
                 {% if row.child_name is not null %}
@@ -63,9 +65,9 @@
     </tr>
 {% else %}
     {% if flat %}
-        <tr class="wi-empty"><td colspan="4" class="text-secondary">Nothing found.</td></tr>
+        <tr class="wi-empty"><td colspan="2" class="text-secondary">Nothing found.</td></tr>
     {% endif %}
 {% endfor %}
 {% if more %}
-    <tr class="wi-empty"><td colspan="4" class="text-secondary">Only the first {{ rows|length }} are shown. Type more of the name to narrow it down.</td></tr>
+    <tr class="wi-empty"><td colspan="2" class="text-secondary">Only the first {{ rows|length }} are shown. Type more of the name to narrow it down.</td></tr>
 {% endif %}

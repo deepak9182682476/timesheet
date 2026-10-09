@@ -15,7 +15,15 @@
 
 {% macro dates(leave) %}
     {{ leave.startDate|date_short }}{% if leave.multiDay %} &ndash; {{ leave.endDate|date_short }}{% endif %}
-    <div class="text-secondary small">{{ leave_days(leave) }} {{ leave_days(leave) == 1 ? 'day' : 'days' }}</div>
+    {# <div class="text-secondary small">{{ leave_days(leave) }} {{ leave_days(leave) == 1 ? 'day' : 'days' }}</div> #}
+    <div class="text-secondary small">{{ leave_days_label(leave) }}</div>
+{% endmacro %}
+
+{# comp-off: the additional hours it is for #}
+{% macro comp_credit(leave) %}
+    {% if leave.compOff and leave.compCredit is not null %}
+        <div class="text-secondary small">{{ leave.compCredit.creditLabel }} for {{ leave.compCredit.reasonLabel|lower }} on {{ leave.compCredit.workDate|date_format('d-M-y') }} ({{ leave.compCredit.hours }} h)</div>
+    {% endif %}
 {% endmacro %}
 
 {% block main %}
@@ -46,7 +54,7 @@
                     {% for leave in my_leave %}
                         <tr>
                             <td class="text-nowrap">{{ _self.dates(leave) }}</td>
-                            <td>{{ leave.title }}</td>
+                            <td>{{ leave.title }}{{ _self.comp_credit(leave) }}</td>
                             <td class="text-secondary">{{ leave.description|default('')|nl2br }}</td>
                             <td>{{ _self.status_badge(leave) }}</td>
                             <td class="text-nowrap">
@@ -90,7 +98,7 @@
                                 {{ leave.user.displayName }}
                             </td>
                             <td class="text-nowrap">{{ _self.dates(leave) }}</td>
-                            <td>{{ leave.title }}</td>
+                            <td>{{ leave.title }}{{ _self.comp_credit(leave) }}</td>
                             <td class="text-secondary">{{ leave.description|default('')|nl2br }}</td>
                             <td>{{ _self.status_badge(leave) }}</td>
                             <td class="text-nowrap">
@@ -101,7 +109,7 @@
                                             <button type="submit" class="btn btn-sm btn-success">Approve</button>
                                         </form>
                                         {# opens the "reason" box below; the reason is optional #}
-                                        <button type="button" class="btn btn-sm btn-outline-danger leave-reject-button" data-action="{{ path('leave_decide', {'id': leave.id, 'decision': 'reject'}) }}" data-who="{{ leave.user.displayName }}" data-what="{{ leave.title }}">Reject</button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger leave-reject-button" data-action="{{ path('leave_decide', {'id': leave.id, 'decision': 'reject'}) }}" data-who="{{ leave.user.displayName }}" data-what="{{ leave.title }}" data-required="{{ leave.compOff ? '1' : '' }}">Reject</button>
                                     </div>
                                 {% endif %}
                             </td>
@@ -134,7 +142,7 @@
                 </div>
                 <div class="modal-body">
                     <p class="mb-3" id="leave-reject-summary"></p>
-                    <label class="form-label" for="leave-reject-comment">Reason for rejecting <span class="text-secondary">(optional)</span></label>
+                    <label class="form-label" for="leave-reject-comment">Reason for rejecting <span class="text-secondary" id="leave-reject-optional">(optional)</span></label>
                     <textarea class="form-control" name="comment" id="leave-reject-comment" rows="3" maxlength="1000" placeholder="Let them know why the leave is rejected"></textarea>
                 </div>
                 <div class="modal-footer">
@@ -158,6 +166,10 @@
                     if (token !== null) { document.getElementById('leave-reject-token').value = token.value; }
                     document.getElementById('leave-reject-summary').textContent = 'Reject the ' + button.dataset.what.toLowerCase() + ' request of ' + button.dataset.who + '?';
                     document.getElementById('leave-reject-comment').value = '';
+                    // a comp-off is only rejected with a reason
+                    var needed = button.dataset.required === '1';
+                    document.getElementById('leave-reject-comment').required = needed;
+                    document.getElementById('leave-reject-optional').classList.toggle('d-none', needed);
                     var backdrop = document.createElement('div');
                     backdrop.className = 'modal-backdrop fade show';
                     backdrop.id = 'leave-reject-backdrop';

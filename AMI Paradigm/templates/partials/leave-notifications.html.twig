@@ -5,7 +5,10 @@
 #}
 {% set leaveRequests = leave_notifications() %}
 {% set newTasks = task_notifications() %}
-{% set notificationCount = leaveRequests|length + newTasks|length %}
+{# additional hours waiting for my decision, and my own additional hours and leave that were just decided #}
+{% set extra = additional_hours_notifications() %}
+{# {% set notificationCount = leaveRequests|length + newTasks|length %} #}
+{% set notificationCount = leaveRequests|length + newTasks|length + extra.pending|length + extra.hours|length + extra.leave|length %}
 <div class="nav-item dropdown d-flex me-1 leave-notifications">
     <a href="#" class="btn btn-icon px-0 position-relative" data-bs-toggle="dropdown" data-bs-auto-close="outside" role="button" aria-expanded="false"
        title="Notifications" aria-label="Notifications{% if notificationCount > 0 %}: {{ notificationCount }} new{% endif %}">
@@ -23,12 +26,41 @@
                 <div class="card-body text-secondary">No new notifications.</div>
             {% else %}
                 <div class="list-group list-group-flush list-group-hoverable">
+                    {% for item in extra.hours %}
+                        <a href="{{ path('additional_hours') }}" class="list-group-item list-group-item-action">
+                            <div class="fw-bold">Your extra hours claim was <span class="{{ item.approved ? 'text-success' : 'text-danger' }}">{{ item.status }}</span></div>
+                            <div class="text-secondary small">
+                                {{ item.workDate|date_format('d-M-y') }} &middot; {{ item.hours }} h &middot; {{ item.creditLabel|lower }}
+                                {% if item.decidedBy is not null %}&middot; by {{ item.decidedBy.displayName }}{% endif %}
+                                {% if item.approved %}&middot; use by {{ item.expiresOn|date_format('d-M-y') }}{% endif %}
+                            </div>
+                            {% if not item.approved and item.decisionComment is not empty %}<div class="small"><span class="text-secondary">Reason:</span> {{ item.decisionComment }}</div>{% endif %}
+                        </a>
+                    {% endfor %}
+                    {% for leave in extra.leave %}
+                        <a href="{{ path('leave') }}" class="list-group-item list-group-item-action">
+                            <div class="fw-bold">Your {{ leave.compOff ? 'comp-off' : leave.title|lower }} was <span class="{{ leave.status == 'approved' ? 'text-success' : 'text-danger' }}">{{ leave.status }}</span></div>
+                            <div class="text-secondary small">
+                                {{ leave.startDate|date_format('d-M-y') }}{% if leave.multiDay %} to {{ leave.endDate|date_format('d-M-y') }}{% endif %}
+                                {% if leave.decidedBy is not null %}&middot; by {{ leave.decidedBy.displayName }}{% endif %}
+                            </div>
+                            {% if leave.status == 'rejected' and leave.decisionComment is not empty %}<div class="small"><span class="text-secondary">Reason:</span> {{ leave.decisionComment }}</div>{% endif %}
+                        </a>
+                    {% endfor %}
+                    {% for item in extra.pending %}
+                        <a href="{{ path('additional_hours') }}#team-additional-hours" class="list-group-item list-group-item-action">
+                            <div class="fw-bold">{{ item.user.displayName }} claimed extra hours</div>
+                            <div class="text-secondary small">
+                                {{ item.workDate|date_format('d-M-y') }} &middot; {{ item.reasonLabel|lower }} &middot; {{ item.hours }} h ({{ item.creditLabel|lower }}) &middot; waiting for your approval
+                            </div>
+                        </a>
+                    {% endfor %}
                     {% for leave in leaveRequests %}
                         <a href="{{ path('leave') }}#team-leave" class="list-group-item list-group-item-action">
                             <div class="fw-bold">{{ leave.user.displayName }} applied for {{ leave.title|lower }}</div>
                             <div class="text-secondary small">
                                 {{ leave.startDate|date_format('d-M-y') }}{% if leave.multiDay %} to {{ leave.endDate|date_format('d-M-y') }}{% endif %}
-                                &middot; {{ leave_days(leave) }} {{ leave_days(leave) == 1 ? 'day' : 'days' }}
+                                &middot; {{ leave_days_label(leave) }}
                                 &middot; waiting for your approval
                             </div>
                         </a>

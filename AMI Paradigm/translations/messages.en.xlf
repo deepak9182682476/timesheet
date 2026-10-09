@@ -1476,7 +1476,7 @@
       </trans-unit>
       <trans-unit id="KH2hgil" resname="account_number">
         <source>account_number</source>
-        <target>Staff number</target>
+        <target>Employee ID</target>
       </trans-unit>
       <trans-unit id="4Ndj7Xo" resname="budgetType">
         <source>budgetType</source>

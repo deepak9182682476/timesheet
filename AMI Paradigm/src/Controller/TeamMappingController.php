@@ -84,7 +84,7 @@ final class TeamMappingController extends AbstractController
         $session->remove(self::NOTICE);
 
         return $this->render('team-mapping/index.html.twig', [
-            'page_setup' => new PageSetup('Team Mapping'),
+            'page_setup' => new PageSetup('Team Allocation'),
             'notice' => \is_string($notice) ? $notice : null,
             'teams' => $teams,
             'selected' => $selected,
@@ -92,6 +92,13 @@ final class TeamMappingController extends AbstractController
             'linked' => $linked,
             'creating' => $selected === null,
             'projects' => $this->teams->getProjects(),
+            // the dates of each project come from the project itself (Administration > Projects) and are only shown here
+            'project_dates' => $this->teams->getProjectDates(),
+            // to say at once that a team name is taken (another team of that name, whatever the capitals)
+            'taken_names' => array_values(array_map(
+                [TeamMappingService::class, 'nameKey'],
+                array_filter($this->teams->getTeamNames(), static fn (int $id) => $selected === null || $id !== $selected->getId(), \ARRAY_FILTER_USE_KEY)
+            )),
             'people' => $this->teams->getPeople(),
             'roles' => $this->teams->getRoles(),
             'token' => self::TOKEN,
@@ -112,7 +119,8 @@ final class TeamMappingController extends AbstractController
             return $this->redirectToRoute('team_mapping', ['new' => 1]);
         }
         if ($this->teams->nameTaken($name)) {
-            $this->flashError('A team called "' . $name . '" exists already. Choose another name.');
+            // $this->flashError('A team called "' . $name . '" exists already. Choose another name.');
+            $this->flashError('Team name "' . $name . '" already exists. Choose another name.');
 
             return $this->redirectToRoute('team_mapping', ['new' => 1]);
         }
@@ -132,7 +140,8 @@ final class TeamMappingController extends AbstractController
             if ($name === '' || mb_strlen($name) > 100) {
                 $this->flashError('Enter a team name of up to 100 characters.');
             } elseif ($this->teams->nameTaken($name, $id)) {
-                $this->flashError('A team called "' . $name . '" exists already. Choose another name.');
+                // $this->flashError('A team called "' . $name . '" exists already. Choose another name.');
+                $this->flashError('Team name "' . $name . '" already exists. Choose another name.');
             } else {
                 $this->teams->updateTeam($team, $name, $this->ids($request->request->all('projects')));
                 $this->flashInfo('Team "' . $name . '" is saved.');
@@ -170,7 +179,9 @@ final class TeamMappingController extends AbstractController
             return $this->redirectToRoute('team_mapping', ['team' => $id]);
         }
 
-        $lead = $request->request->getBoolean('lead');
+        // $lead = $request->request->getBoolean('lead');
+        // the "Team lead" column is hidden: whoever leads the team stays lead, everybody added is a member
+        $lead = $request->request->has('lead') ? $request->request->getBoolean('lead') : $this->teams->isLead($team, $person);
         if (!$lead && $this->teams->isLastLead($team, $person)) {
             $lead = true;
             $this->flashWarning($person->getDisplayName() . ' stays lead: a team needs at least one lead.');

@@ -74,7 +74,8 @@ final class UserController extends AbstractController
         //$table->addColumn('user', ['class' => 'alwaysVisible', 'orderBy' => 'user']);
         $table->addColumn('username', ['class' => 'alwaysVisible']);
         $table->addColumn('alias', ['class' => 'd-none']);
-        $table->addColumn('account_number', ['class' => 'd-none']);
+        // $table->addColumn('account_number', ['class' => 'd-none']);
+        $table->addColumn('account_number', ['class' => 'text-nowrap']);
         $table->addColumn('title', ['class' => 'd-none']);
         $table->addColumn('email', ['class' => 'd-none', 'orderBy' => false]);
         $table->addColumn('lastLogin', ['class' => 'd-none', 'orderBy' => false]);

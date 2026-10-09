@@ -1,0 +1,145 @@
+{% extends 'base.html.twig' %}
+{% import "macros/widgets.html.twig" as widgets %}
+
+{# Additional hours: mine (with what they are worth as comp-off) and those of my people waiting for my decision #}
+
+{% macro status_badge(item) %}
+    {% set colors = {'pending': 'warning', 'approved': 'success', 'rejected': 'danger'} %}
+    {% set labels = {'pending': 'Waiting for approval', 'approved': 'Approved', 'rejected': 'Rejected'} %}
+    <span class="badge bg-{{ colors[item.status] ?? 'secondary' }} text-white">{{ labels[item.status] ?? item.status }}</span>
+    {% if not item.pending and item.decidedBy is not null %}<div class="text-secondary small">by {{ item.decidedBy.displayName }}</div>{% endif %}
+    {% if item.status == 'rejected' and item.decisionComment is not empty %}
+        <div class="small mt-1"><span class="text-secondary">Reason:</span> {{ item.decisionComment|nl2br }}</div>
+    {% endif %}
+{% endmacro %}
+
+{% macro worked(item) %}
+    {{ item.workDate|date_short }}
+    <div class="text-secondary small">{{ item.workDate|date_format('l') }} &middot; {{ item.reasonLabel }}</div>
+{% endmacro %}
+
+{% block main %}
+    {% set token = csrf_token('additional_hours_action') %}
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">My Extra Hours Claims</h3>
+            <div class="card-actions">
+                <a href="{{ path('additional_hours_new') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Claim Extra Hours</a>
+            </div>
+        </div>
+        <div class="card-body border-bottom py-2 text-secondary small">
+            Comp-off available now:
+            {% if available is empty %}
+                <strong>none</strong>.
+            {% else %}
+                {% for credit in available %}
+                    <span class="badge bg-green-lt me-1">{{ credit.creditLabel }} &middot; {{ credit.workDate|date_format('d-M-y') }} &middot; use by {{ credit.expiresOn|date_format('d-M-y') }}</span>
+                {% endfor %}
+                &ndash; take it with Leave &gt; Apply for Leave &gt; Comp-off Leave.
+            {% endif %}
+        </div>
+        {% if mine is empty %}
+            <div class="card-body text-secondary">
+                Worked on a weekend, a festival or holiday, or a night shift? Use "Claim Extra Hours" to send them to your manager.
+            </div>
+        {% else %}
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Hours</th>
+                        <th>Comp-off</th>
+                        <th>Work done</th>
+                        <th>{{ 'status'|trans }}</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in mine %}
+                        {% set used = used_by[item.id] ?? null %}
+                        <tr>
+                            <td class="text-nowrap">{{ _self.worked(item) }}</td>
+                            <td class="text-nowrap">{{ item.hours }} h</td>
+                            <td class="text-nowrap">
+                                {{ item.creditLabel }}
+                                <div class="text-secondary small">
+                                    {% if used is not null %}
+                                        comp-off on {{ used.startDate|date_format('d-M-y') }}{% if used.pending %} (waiting){% endif %}
+                                    {% elseif item.approved and item.expired %}
+                                        expired on {{ item.expiresOn|date_format('d-M-y') }}
+                                    {% elseif item.approved %}
+                                        use by {{ item.expiresOn|date_format('d-M-y') }}
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="text-secondary">{{ item.description|default('')|nl2br }}</td>
+                            <td>{{ _self.status_badge(item) }}</td>
+                            <td class="text-nowrap">
+                                {% if cancellable[item.id] ?? false %}
+                                    <form method="post" action="{{ path('additional_hours_cancel', {'id': item.id}) }}" class="additional-hours-cancel-form">
+                                        <input type="hidden" name="_token" value="{{ token }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if team is not empty %}
+        <div class="card mb-3" id="team-additional-hours">
+            <div class="card-header"><h3 class="card-title">Team Extra Hours Claims</h3></div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Person</th>
+                        <th>Date</th>
+                        <th>Hours</th>
+                        <th>Comp-off</th>
+                        <th>Work done</th>
+                        <th>{{ 'status'|trans }}</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in team %}
+                        <tr>
+                            <td class="text-nowrap">{{ widgets.user_avatar(item.user, false, 'avatar-rounded avatar-xs me-1') }} {{ item.user.displayName }}</td>
+                            <td class="text-nowrap">{{ _self.worked(item) }}</td>
+                            <td class="text-nowrap">{{ item.hours }} h</td>
+                            <td class="text-nowrap">{{ item.creditLabel }}</td>
+                            <td class="text-secondary">{{ item.description|default('')|nl2br }}</td>
+                            <td>{{ _self.status_badge(item) }}</td>
+                            <td class="text-nowrap">
+                                {% if item.pending and (decidable[item.id] ?? false) %}
+                                    <div class="btn-list flex-nowrap justify-content-end">
+                                        <form method="post" action="{{ path('additional_hours_decide', {'id': item.id, 'decision': 'approve'}) }}">
+                                            <input type="hidden" name="_token" value="{{ token }}">
+                                            <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                        </form>
+                                        <button type="button" class="btn btn-sm btn-outline-danger reject-with-reason" data-action="{{ path('additional_hours_decide', {'id': item.id, 'decision': 'reject'}) }}" data-summary="Reject the extra hours claim of {{ item.user.displayName }} on {{ item.workDate|date_format('d-M-y') }}?">Reject</button>
+                                    </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
+    {{ include('partials/reject-with-reason.html.twig', {'token': token, 'title': 'Reject Extra Hours Claim'}) }}
+    <script type="text/javascript">
+        document.querySelectorAll('.additional-hours-cancel-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) { if (!window.confirm('Cancel this extra hours claim?')) { event.preventDefault(); } });
+        });
+    </script>
+{% endblock %}
