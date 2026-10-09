@@ -10,14 +10,17 @@
                     {% for name, count in result.people %}{{ name }}: {{ count }}{% if not loop.last %} &middot; {% endif %}{% endfor %}
                     {% if result.skipped > 0 %}<div>{{ result.skipped }} sample {{ result.skipped == 1 ? 'row was' : 'rows were' }} skipped.</div>{% endif %}
                 </div>
-                <div class="mt-2"><a href="{{ path('timesheet') }}" class="btn btn-sm">Open My timesheets</a></div>
+                {# <div class="mt-2"><a href="{{ path('timesheet') }}" class="btn btn-sm">Open My timesheets</a></div> #}
+                <div class="mt-2"><a href="{{ path('timesheet') }}" class="btn btn-sm">Open Log Time</a></div>
             </div>
         {% endif %}
         {% if result.errors is not empty %}
             <div class="card mb-3 border-danger">
                 <div class="card-header">
                     <h3 class="card-title text-danger">
-                        {% if result.saved > 0 %}
+                        {% if result.saved == 0 and result.errors|length == 1 and (result.errors|first|first) starts with 'The file has no rows' %}
+                            Nothing was uploaded{% if file_name %} from {{ file_name }}{% endif %}
+                        {% elseif result.saved > 0 %}
                             {{ result.errors|length }} {{ result.errors|length == 1 ? 'row was' : 'rows were' }} rejected and not saved
                         {% else %}
                             Nothing was uploaded{% if file_name %} from {{ file_name }}{% endif %}: {{ result.errors|length }} {{ result.errors|length == 1 ? 'row was' : 'rows were' }} rejected
@@ -54,9 +57,10 @@
             <div class="card h-100">
                 <div class="card-header"><h3 class="card-title">1. Download the Template</h3></div>
                 <div class="card-body">
-                    <p>The Excel template has the column names, two example rows, and a sheet with the projects, phases, activities and tasks you can use.</p>
+                    <p>The Excel template has the column names, two example rows, and a sheet with the projects, categories, activities and tasks you can use.</p>
                     <p class="text-secondary small mb-3">Columns: {{ headers|join(', ') }}</p>
-                    <p class="text-secondary small mb-3">Bulk upload covers "Non-Project Activities". Time on Agile, Waterfall and Pre-sales projects is entered on the time entry form or in "Weekly hours", where the assigned Epic, Feature, User Story and so on are picked.</p>
+                    {# <p class="text-secondary small mb-3">Bulk upload covers "Non-Project Activities". Time on Agile, Waterfall and Pre-sales projects is entered on the time entry form or in "Weekly hours", where the assigned Epic, Feature, User Story and so on are picked.</p> #}
+                    <p class="text-secondary small mb-3">Bulk upload covers "Non-Project Activities". Time on projects and Pre-Sales is entered in "Log Time" or "Bulk Entry (Week)", where the assigned work items are picked.</p>
                     <a href="{{ path('timesheet_bulk_upload_template') }}" class="btn btn-outline-primary"><i class="fas fa-download me-2"></i>Download Template</a>
                 </div>
             </div>

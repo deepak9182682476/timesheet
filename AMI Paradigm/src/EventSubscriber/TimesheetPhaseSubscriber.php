@@ -18,13 +18,19 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 
 /**
- * Adds the "Phase" picker to every time entry (project > phase > activity > task).
+ * Adds the "Category" picker (stored as the phase) to every time entry (project > phase > activity > task).
  * The phase name is stored as a custom field of the entry. Each option carries the project it
  * is for and the activities linked to it; the script in partials/timesheet-cascade.html.twig
  * uses that to narrow the phases to the picked project and the activities to the picked phase.
  */
 final class TimesheetPhaseSubscriber implements EventSubscriberInterface
 {
+    /**
+     * Not offered in the Category dropdown. "Leave & Time Off" is still used by approved leave, which is
+     * logged automatically (LeaveTimesheetSync), so those entries keep showing in Log Time and the charts.
+     */
+    public const HIDDEN = ['Pre-Sales & Practice', \App\TeamEvent\LeaveTimesheetSync::LEAVE_PHASE];
+
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {
     }
@@ -50,8 +56,16 @@ final class TimesheetPhaseSubscriber implements EventSubscriberInterface
             // the phases table is created by a migration: without it the form simply has no phase
             return;
         }
+        // an entry keeps the phase it was saved with, even if that phase was renamed or deleted since
+        $current = $timesheet->getMetaField(Phase::TIMESHEET_META_FIELD);
+        $currentValue = $current !== null ? (string) $current->getValue() : '';
+
         foreach ($phases as $phase) {
             $name = (string) $phase->getName();
+            // hidden from the dropdown, except on an entry that already has it (for example a leave day)
+            if (\in_array($name, self::HIDDEN, true) && $name !== $currentValue) {
+                continue;
+            }
             $choices[$name] = $name;
             $activityIds = [];
             foreach ($phase->getActivities() as $activity) {
@@ -63,9 +77,6 @@ final class TimesheetPhaseSubscriber implements EventSubscriberInterface
             ];
         }
 
-        // an entry keeps the phase it was saved with, even if that phase was renamed or deleted since
-        $current = $timesheet->getMetaField(Phase::TIMESHEET_META_FIELD);
-        $currentValue = $current !== null ? (string) $current->getValue() : '';
         if ($currentValue !== '' && !isset($choices[$currentValue])) {
             $choices[$currentValue] = $currentValue;
             $attributes[$currentValue] = ['data-project' => '*', 'data-activities' => ''];
@@ -95,7 +106,8 @@ final class TimesheetPhaseSubscriber implements EventSubscriberInterface
     {
         $definition = new TimesheetMeta();
         $definition->setName(Phase::TIMESHEET_META_FIELD);
-        $definition->setLabel('Phase');
+        // $definition->setLabel('Phase');
+        $definition->setLabel('Category');
         $definition->setType(ChoiceType::class);
         $definition->setIsRequired(false);
         $definition->setIsVisible(true);

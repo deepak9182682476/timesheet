@@ -224,7 +224,9 @@ final class UserController extends AbstractController
             'include_active_flag' => true,
             'include_preferences' => true,
             'include_supervisor' => $this->isGranted('supervisor_other_profile'),
-            'include_teams' => $this->isGranted('teams_other_profile'),
+            // teams are put together by Project Managers and Project Leads on Team Mapping, not here
+            // 'include_teams' => $this->isGranted('teams_other_profile'),
+            'include_teams' => false,
             'include_roles' => $this->isGranted('roles_other_profile'),
         ]);
     }

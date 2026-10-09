@@ -27,7 +27,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Table(name: 'kimai2_phases')]
 #[ORM\Entity]
 #[ORM\UniqueConstraint(columns: ['name'])]
-#[UniqueEntity(fields: ['name'], message: 'A phase with this name already exists.')]
+#[UniqueEntity(fields: ['name'], message: 'A category with this name already exists.')]
 class Phase
 {
     /** Name of the custom field on a time entry that holds the phase name */

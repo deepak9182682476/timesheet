@@ -159,8 +159,8 @@ abstract class TimesheetAbstractController extends AbstractController
             // "Project" holds Agile and Waterfall together: one "Work item" column, like "All"
             // (separate Agile and Waterfall views had one column per level: Epic, Feature, User Story ...)
             WorkModelService::AGILE, WorkModelService::WATERFALL => array_combine($levelNames, \array_slice(WorkModelService::LEVELS[$view], 0, 3)),
-            WorkModelService::PRESALES => [$levelNames[0] => 'Lead', Phase::TIMESHEET_META_FIELD => 'Phase'],
-            WorkModelService::NON_PROJECT => [Phase::TIMESHEET_META_FIELD => 'Phase'],
+            WorkModelService::PRESALES => [$levelNames[0] => 'Lead', Phase::TIMESHEET_META_FIELD => 'Category'],
+            WorkModelService::NON_PROJECT => [Phase::TIMESHEET_META_FIELD => 'Category'],
             default => [$levelNames[0] => 'Work item'],
         };
         foreach ($levelColumns as $placedName => $title) {

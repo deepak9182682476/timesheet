@@ -71,9 +71,11 @@ final class UserSubscriber extends AbstractActionsSubscriber
             $event->addActionToSubmenu('filter', 'timesheet', ['url' => $this->path('admin_timesheet', ['users[]' => $user->getId()]), 'title' => 'timesheet.filter']);
         }
 
-        if ($this->isGranted('view_team')) {
-            $event->addActionToSubmenu('filter', 'teams', ['url' => $this->path('admin_team', ['users[]' => $user->getId()]), 'title' => 'teams']);
-        }
+        // The Teams page of the administration is hidden (teams are put together on "Team Mapping"), so this
+        // link is hidden too; it also led nowhere for managers. Remove the comment marks to bring it back.
+        // if ($this->isGranted('view_team')) {
+        //     $event->addActionToSubmenu('filter', 'teams', ['url' => $this->path('admin_team', ['users[]' => $user->getId()]), 'title' => 'teams']);
+        // }
 
         // Users are never deleted, only disabled (with a reason, see UserStatusController).
         // To bring "Delete" back, remove the comment marks and allow "delete" again in UserVoter.

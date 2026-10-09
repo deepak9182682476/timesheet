@@ -39,7 +39,7 @@ final class ExportContext
             'title' => 'All work',
             'mixed' => true,
             // name of the custom field of a time entry => column title
-            'columns' => array_merge(WorkModelService::META_LEVELS, ['phase' => 'Phase']),
+            'columns' => array_merge(WorkModelService::META_LEVELS, ['phase' => 'Category']),
             'showProject' => true,
             'showEmployee' => true,
             'types' => [],

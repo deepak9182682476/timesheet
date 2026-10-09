@@ -29,7 +29,7 @@ final class PhaseEditForm extends AbstractType
     {
         $builder
             ->add('name', TextType::class, [
-                'label' => 'Phase',
+                'label' => 'Category',
                 'attr' => ['autofocus' => 'autofocus'],
             ])
             ->add('project', EntityType::class, [
@@ -38,8 +38,8 @@ final class PhaseEditForm extends AbstractType
                 'query_builder' => static fn (EntityRepository $repository) => $repository->createQueryBuilder('p')->orderBy('p.name', 'ASC'),
                 'choice_label' => static fn (Project $project) => 'Only: ' . $project->getName(),
                 'required' => false,
-                'placeholder' => 'All projects (that have no phases of their own)',
-                'help' => 'Pick "Only: ' . Phase::NON_PROJECT_NAME . '" for a non-project phase. Leave it on "All projects" for a phase of normal project work.',
+                'placeholder' => 'All projects (that have no categories of their own)',
+                'help' => 'Pick "Only: ' . Phase::NON_PROJECT_NAME . '" for a non-project category. Leave it on "All projects" for a category of normal project work.',
             ])
             ->add('activities', EntityType::class, [
                 'label' => 'Activities',
@@ -49,12 +49,12 @@ final class PhaseEditForm extends AbstractType
                 'multiple' => true,
                 'required' => false,
                 'by_reference' => false,
-                'help' => 'The activities offered on a time entry once this phase is picked. Only these are offered.',
+                'help' => 'The activities offered on a time entry once this category is picked. Only these are offered.',
             ])
             ->add('position', IntegerType::class, [
                 'label' => 'Order',
                 'required' => false,
-                'help' => 'Phases are listed from the lowest number to the highest.',
+                'help' => 'Categories are listed from the lowest number to the highest.',
             ])
         ;
     }

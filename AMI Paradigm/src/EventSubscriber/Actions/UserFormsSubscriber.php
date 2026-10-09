@@ -46,9 +46,10 @@ final class UserFormsSubscriber extends AbstractActionsSubscriber
         // if ($this->isGranted('api-token', $user)) {
         //     $event->addAction('api-token', ['url' => $this->path('user_profile_api_token', ['username' => $user->getUserIdentifier()]), 'title' => 'profile.api-token']);
         // }
-        if ($this->isGranted('teams', $user)) {
-            $event->addAction('teams', ['url' => $this->path('user_profile_teams', ['username' => $user->getUserIdentifier()]), 'title' => 'teams']);
-        }
+        // teams are put together on Team Mapping (Project Managers and Project Leads)
+        // if ($this->isGranted('teams', $user)) {
+        //     $event->addAction('teams', ['url' => $this->path('user_profile_teams', ['username' => $user->getUserIdentifier()]), 'title' => 'teams']);
+        // }
         if ($this->isGranted('roles', $user)) {
             $event->addAction('roles', ['url' => $this->path('user_profile_roles', ['username' => $user->getUserIdentifier()]), 'title' => 'profile.roles']);
         }

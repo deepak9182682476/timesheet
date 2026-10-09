@@ -56,7 +56,7 @@ final class WorkModelService
     public const LEVELS = [
         self::AGILE => ['Epic', 'Feature', 'User Story', 'Activity', 'Task'],
         self::WATERFALL => ['Module', 'Sub Module', 'Business Req', 'Activity', 'Task'],
-        self::PRESALES => ['Lead', 'Phase', 'Activity', 'Task'],
+        self::PRESALES => ['Lead', 'Category', 'Activity', 'Task'],
     ];
 
     /** Custom field of a time entry: the number of the picked item (its Task, or its Activity when no task was picked) */
@@ -242,9 +242,9 @@ final class WorkModelService
         $columns = match ($model) {
             self::AGILE, self::WATERFALL => array_combine($levelFields, \array_slice(self::LEVELS[$model], 0, 3)),
             'project' => [$levelFields[0] => 'Epic / Module', $levelFields[1] => 'Feature / Sub Module', $levelFields[2] => 'User Story / Business Req'],
-            self::PRESALES => [$levelFields[0] => 'Lead', Phase::TIMESHEET_META_FIELD => 'Phase'],
-            self::NON_PROJECT => [Phase::TIMESHEET_META_FIELD => 'Phase'],
-            default => array_merge(self::META_LEVELS, [Phase::TIMESHEET_META_FIELD => 'Phase']),
+            self::PRESALES => [$levelFields[0] => 'Lead', Phase::TIMESHEET_META_FIELD => 'Category'],
+            self::NON_PROJECT => [Phase::TIMESHEET_META_FIELD => 'Category'],
+            default => array_merge(self::META_LEVELS, [Phase::TIMESHEET_META_FIELD => 'Category']),
         };
 
         return [
@@ -289,7 +289,7 @@ final class WorkModelService
         $project = new Project();
         $project->setName(self::PRESALES_PROJECT);
         $project->setCustomer($customer);
-        $project->setComment('Pre-sales work: Lead > Phase > Activity > Task. Managers and leads maintain the leads on the "Project mapping" page.');
+        $project->setComment('Pre-sales work: Lead > Category > Activity > Task. Managers and leads maintain the leads on the "Project mapping" page.');
         $project->setGlobalActivities(false);
         $this->entityManager->persist($project);
         $this->entityManager->flush();
@@ -1059,6 +1059,20 @@ final class WorkModelService
                 $this->setMeta($timesheet, self::META_ITEM, null);
                 foreach (array_keys(self::META_LEVELS) as $name) {
                     $this->setMeta($timesheet, $name, null);
+                }
+            }
+            // Entries made where no phase is picked (Bulk Entry (Week)) get the phase their activity belongs to,
+            // so lists and exports show it like for entries made on Log Time.
+            $phaseMeta = $timesheet->getMetaField(\App\Entity\Phase::TIMESHEET_META_FIELD);
+            if (($phaseMeta === null || (string) $phaseMeta->getValue() === '') && $timesheet->getActivity()?->getId() !== null) {
+                $phase = $this->entityManager->getConnection()->fetchOne(
+                    'SELECT p.name FROM kimai2_phases p JOIN kimai2_phase_activities pa ON pa.phase_id = p.id
+                     WHERE pa.activity_id = ? AND (p.project_id = ? OR p.project_id IS NULL)
+                     ORDER BY p.project_id IS NULL, p.position, p.name LIMIT 1',
+                    [(int) $timesheet->getActivity()->getId(), (int) $project->getId()]
+                );
+                if (\is_string($phase) && $phase !== '') {
+                    $this->setMeta($timesheet, \App\Entity\Phase::TIMESHEET_META_FIELD, $phase);
                 }
             }
 

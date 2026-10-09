@@ -393,7 +393,8 @@ final class WorkItemImportService
                             }
                             $this->header[] = $title;
                             foreach ($levels as $level => $name) {
-                                if ($this->same($title, $name)) {
+                                // "Category" was called "Phase" before: older files still work
+                                if ($this->same($title, $name) || ($name === 'Category' && $this->same($title, 'Phase'))) {
                                     $columns[$level] = $index;
                                 }
                             }

@@ -208,7 +208,7 @@ final class MenuSubscriber implements EventSubscriberInterface
 
         // phases sit between project and activity on a time entry; administrators maintain them
         if ($isAdmin) {
-            $phases = new MenuItemModel('phases', 'Phases', 'admin_phase', [], 'fas fa-layer-group');
+            $phases = new MenuItemModel('phases', 'Categories', 'admin_phase', [], 'fas fa-layer-group');
             $phases->setChildRoutes(['admin_phase_create', 'admin_phase_edit', 'admin_phase_task_create', 'admin_phase_task_edit']);
             $menu->addChild($phases);
         }

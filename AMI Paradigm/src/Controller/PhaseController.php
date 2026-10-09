@@ -53,7 +53,7 @@ final class PhaseController extends AbstractController
         ksort($tasks, SORT_NATURAL | SORT_FLAG_CASE);
 
         return $this->render('phases/index.html.twig', [
-            'page_setup' => new PageSetup('Phases'),
+            'page_setup' => new PageSetup('Categories'),
             'groups' => $groups,
             'tasks' => $tasks,
         ]);
@@ -157,7 +157,7 @@ final class PhaseController extends AbstractController
         }
 
         return $this->render('phases/edit-task.html.twig', [
-            'page_setup' => new PageSetup('Phases'),
+            'page_setup' => new PageSetup('Categories'),
             'task' => $task,
             'form' => $form->createView(),
         ]);
@@ -167,7 +167,7 @@ final class PhaseController extends AbstractController
     {
         $phase = $this->entityManager->getRepository(Phase::class)->find($id);
         if ($phase === null) {
-            throw $this->createNotFoundException('Phase not found');
+            throw $this->createNotFoundException('Category not found');
         }
 
         return $phase;
@@ -191,7 +191,7 @@ final class PhaseController extends AbstractController
         }
 
         return $this->render('phases/edit.html.twig', [
-            'page_setup' => new PageSetup('Phases'),
+            'page_setup' => new PageSetup('Categories'),
             'phase' => $phase,
             'form' => $form->createView(),
         ]);

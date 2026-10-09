@@ -39,7 +39,7 @@ use App\Validator\ValidationFailedException;
  */
 final class BulkUploadService
 {
-    public const HEADERS = ['Date', 'Employee', 'Project', 'Phase', 'Activity', 'Task', 'Hours', 'Description'];
+    public const HEADERS = ['Date', 'Employee', 'Project', 'Category', 'Activity', 'Task', 'Hours', 'Description'];
     /** Rows with this description are the examples of the template: they are skipped */
     public const SAMPLE_MARK = 'Sample row - replace or delete';
     public const MAX_ROWS = 1000;
@@ -92,7 +92,7 @@ final class BulkUploadService
         $today = (new \DateTime('now', new \DateTimeZone($user->getTimezone())))->format('Y-m-d');
         $samples = \array_slice(array_values(array_filter($combinations, static fn (array $c) => $c[2] !== '')), 0, 2);
         if ($samples === []) {
-            $samples = [['Project name', 'Phase name', 'Activity name', '']];
+            $samples = [['Project name', 'Category name', 'Activity name', '']];
         }
         foreach ($samples as $index => $sample) {
             $writer->addRow(Row::fromValues([$today, $user->getUserIdentifier(), $sample[0], $sample[1], $sample[2], $sample[3], $index === 0 ? 2 : 1.5, self::SAMPLE_MARK]));
@@ -107,8 +107,8 @@ final class BulkUploadService
             ['Date', 'The day of the work, as YYYY-MM-DD (for example ' . $today . ') or as a normal Excel date.'],
             ['Employee', 'Username or e-mail of the person the entry is for. Leave empty for yourself. Entries for other people are accepted only from their superiors.'],
             ['Project', 'Project name, exactly as in the sheet "Allowed values".'],
-            ['Phase', 'A phase of that project.'],
-            ['Activity', 'An activity of that phase.'],
+            ['Category', 'A category of that project.'],
+            ['Activity', 'An activity of that category.'],
             ['Task', 'Optional. A task of that activity.'],
             ['Hours', 'From 0.5 to ' . self::MAX_HOURS . ' in steps of 0.5 (0.5, 1, 1.5, 2 ...).'],
             ['Description', 'Optional note. Rows that still say "' . self::SAMPLE_MARK . '" are examples and are skipped.'],
@@ -126,7 +126,7 @@ final class BulkUploadService
         $values->setColumnWidth(4, 5);
         $values->setColumnWidth(24, 6);
         $values->setColumnWidth(28, 7);
-        $writer->addRow(Row::fromValues(['Project', 'Phase', 'Activity', 'Task', '', 'Employee (username)', 'Name'], $bold));
+        $writer->addRow(Row::fromValues(['Project', 'Category', 'Activity', 'Task', '', 'Employee (username)', 'Name'], $bold));
         $people = array_values($this->getAllowedUsers($user));
         $lines = max(\count($combinations), \count($people));
         for ($i = 0; $i < $lines; $i++) {
@@ -192,7 +192,8 @@ final class BulkUploadService
         // rows with a problem are rejected and reported; the correct rows are saved
         if ($entries === []) {
             if ($result['errors'] === []) {
-                $result['errors'][2] = ['The file has no rows to upload.'];
+                // $result['errors'][2] = ['The file has no rows to upload.'];
+                $result['errors'][2] = ['The file has no rows to upload. Rows whose Description still says "' . self::SAMPLE_MARK . '" are examples and are skipped: change or remove that text.'];
             }
 
             return $result;
@@ -268,7 +269,7 @@ final class BulkUploadService
 
         // project > phase > activity > task
         $project = $this->findProject($user, trim((string) $row['Project']), $errors, $cache);
-        $phase = $project !== null ? $this->findPhase($project, trim((string) $row['Phase']), $errors) : null;
+        $phase = $project !== null ? $this->findPhase($project, trim((string) $row['Category']), $errors) : null;
         $activity = ($project !== null && $phase !== null) ? $this->findActivity($project, $phase, trim((string) $row['Activity']), $errors) : null;
         $task = null;
         $taskName = trim((string) $row['Task']);
@@ -334,7 +335,8 @@ final class BulkUploadService
             if ($this->same((string) $project->getName(), $name)) {
                 // Agile, Waterfall and Pre-sales entries pick an assigned item (Epic > Feature > User Story ...): not covered by the file yet
                 if ($this->workModels->usesItems($project)) {
-                    $errors[] = 'Project "' . $name . '" is ' . $this->workModels->getModelName($project) . ': its time is entered on the time entry form or in "Weekly hours", not by bulk upload.';
+                    // $errors[] = 'Project "' . $name . '" is ' . $this->workModels->getModelName($project) . ': its time is entered in "Log Time" or "Bulk Entry (Week)", not by bulk upload.';
+                    $errors[] = 'Project "' . $name . '" has work items: its time is entered in "Log Time" or "Bulk Entry (Week)", not by bulk upload.';
 
                     return null;
                 }
@@ -364,7 +366,7 @@ final class BulkUploadService
     private function findPhase(Project $project, string $name, array &$errors): ?Phase
     {
         if ($name === '') {
-            $errors[] = 'Phase is missing.';
+            $errors[] = 'Category is missing.';
 
             return null;
         }
@@ -373,7 +375,7 @@ final class BulkUploadService
                 return $phase;
             }
         }
-        $errors[] = 'Phase "' . $name . '" is not a phase of the project "' . $project->getName() . '".';
+        $errors[] = 'Category "' . $name . '" is not a category of the project "' . $project->getName() . '".';
 
         return null;
     }
@@ -409,7 +411,7 @@ final class BulkUploadService
                 return $activity;
             }
         }
-        $errors[] = 'Activity "' . $name . '" is not an activity of the phase "' . $phase->getName() . '".';
+        $errors[] = 'Activity "' . $name . '" is not an activity of the category "' . $phase->getName() . '".';
 
         return null;
     }
@@ -496,7 +498,8 @@ final class BulkUploadService
                         $columns = [];
                         foreach ($cells as $index => $title) {
                             foreach (self::HEADERS as $header) {
-                                if (\is_string($title) && $this->same($title, $header)) {
+                                // "Category" was called "Phase" before: older files still work
+                                if (\is_string($title) && ($this->same($title, $header) || ($header === 'Category' && $this->same($title, 'Phase')))) {
                                     $columns[$header] = $index;
                                 }
                             }

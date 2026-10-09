@@ -68,6 +68,14 @@
 
 {% block javascripts %}
     {{ parent() }}
+    <style>
+        /* hours like 1.5 or 10.5 must fit in a day cell; the three pickers on the left give up the room */
+        form[name=quick_entry_form] .dataTable input.duration-hours { min-width: 4.25rem; padding-left: .5rem; padding-right: .25rem; text-align: center; }
+        form[name=quick_entry_form] .dataTable input.duration-hours::-webkit-outer-spin-button,
+        form[name=quick_entry_form] .dataTable input.duration-hours::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        form[name=quick_entry_form] .dataTable input.duration-hours { -moz-appearance: textfield; }
+        form[name=quick_entry_form] .dataTable tbody td:nth-child(-n+3) { min-width: 140px; max-width: 190px; }
+    </style>
     <script>
         document.addEventListener('kimai.initialized', function(event) {
             const kimai = event.detail.kimai;

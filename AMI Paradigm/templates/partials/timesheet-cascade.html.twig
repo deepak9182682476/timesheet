@@ -193,7 +193,7 @@
             if (phase === null || phase.value !== '' || !(parseInt(phase.dataset.offered || '0', 10) > 0)) { return; }
             event.preventDefault();
             event.stopImmediatePropagation();
-            hint(phase, 'Please pick a phase.');
+            hint(phase, 'Please pick a category.');
         }, true);
 
         document.addEventListener('DOMContentLoaded', function () {
