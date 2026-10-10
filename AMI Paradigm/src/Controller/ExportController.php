@@ -33,8 +33,23 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('create_export')]
 final class ExportController extends AbstractController
 {
+    /** the request comes from the export box of Team Dashboard (see readScope) */
+    private bool $teamScope = false;
+
     public function __construct(private readonly ServiceExport $export, private readonly \App\WorkModel\WorkModelService $workModels)
     {
+    }
+
+    /**
+     * Team Dashboard's export box sends scope=team: it exports the dashboard's whole team. The flag is taken
+     * out of the request so it does not reach the search form.
+     */
+    private function readScope(Request $request): void
+    {
+        $scope = $request->query->get('scope') ?? $request->request->get('scope');
+        $this->teamScope = $scope === 'team' && $this->isGranted('view_other_timesheet');
+        $request->query->remove('scope');
+        $request->request->remove('scope');
     }
 
     #[Route(path: '/', name: 'export', methods: ['GET'])]
@@ -134,6 +149,7 @@ final class ExportController extends AbstractController
     #[Route(path: '/count', name: 'export_count', methods: ['GET'])]
     public function count(Request $request): \Symfony\Component\HttpFoundation\JsonResponse
     {
+        $this->readScope($request);
         $query = $this->getDefaultQuery();
         $form = $this->getToolbarForm($query, 'GET');
         $form->submit($request->query->all(), false);
@@ -172,6 +188,7 @@ final class ExportController extends AbstractController
 
         // prevent the token from becoming part of the search query
         $request->request->remove('_token');
+        $this->readScope($request);
 
         $query = $this->getDefaultQuery();
 
@@ -267,7 +284,9 @@ final class ExportController extends AbstractController
             return null;
         }
 
-        $team = $this->workModels->getAssignableUsers($user);
+        // the export box of Team Dashboard (scope=team): the whole team, the same people as the dashboard
+        // (WorkModelService::getTeamPeople); the Export page itself: oneself and the people who report to one
+        $team = $this->teamScope ? $this->workModels->getTeamPeople($user) : $this->workModels->getAssignableUsers($user);
 
         return $team !== [] ? $team : [$user];
     }

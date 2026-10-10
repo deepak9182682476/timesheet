@@ -152,6 +152,9 @@ abstract class TimesheetAbstractController extends AbstractController
             $listQuery->setEnd($end !== null && $end < $period['end'] ? $end : $period['end']);
         }
 
+        // who is in the list (Team Dashboard: the whole team), without showing up as a search filter
+        $listQuery = $this->scopeQuery($listQuery);
+
         $summary = $this->getListSummary($listQuery, $view, $chosenProject);
 
         // With charts above the list, the entries are only shown after "View All Entries" (per tab and project).
@@ -301,6 +304,14 @@ abstract class TimesheetAbstractController extends AbstractController
     protected function getDashboardPeriod(Request $request, string $context = ''): ?array
     {
         return null;
+    }
+
+    /**
+     * Who the list shows, applied to a copy of its query (nothing by default), see TimesheetTeamController.
+     */
+    protected function scopeQuery(TimesheetQuery $query): TimesheetQuery
+    {
+        return $query;
     }
 
     /**
@@ -528,6 +539,7 @@ abstract class TimesheetAbstractController extends AbstractController
             $listQuery->setProjects($wanted !== [] ? $wanted : [0]);
         }
 
+        $listQuery = $this->scopeQuery($listQuery);
         $entries = $this->repository->getTimesheetResult($listQuery);
         $results = $entries->getResults();
 

@@ -205,6 +205,8 @@ final class TimesheetTeamController extends TimesheetAbstractController
     {
         $query->setCurrentUser($this->getUser());
         $query->addQueryHint(TimesheetQueryHint::USER_PREFERENCES); // e.g. for latest approval
+
+        // the team (who is shown) is applied in scopeQuery(), not here: here it would count as a search filter
     }
 
     protected function getCreateForm(Timesheet $entry): FormInterface
@@ -342,7 +344,7 @@ final class TimesheetTeamController extends TimesheetAbstractController
         }
 
         // the projects of this tab the team logged time on
-        $logged = clone $query;
+        $logged = $this->scopeQuery(clone $query);
         $logged->setProjects($this->getViewProjectIds(self::VIEW_PROJECT) ?: [0]);
         foreach ($this->repository->getDurationsGroupedBy($logged, 'project') as $row) {
             if ($row['key'] !== null && !\in_array((int) $row['key'], $special, true)) {
@@ -368,6 +370,27 @@ final class TimesheetTeamController extends TimesheetAbstractController
     public function setWeeklyCutoff(\App\Timesheet\WeeklyCutoffService $weeklyCutoff): void
     {
         $this->weeklyCutoff = $weeklyCutoff;
+    }
+
+    /**
+     * Team Dashboard shows "my people" the same way everywhere (list, pies, Export box, the Export button):
+     * oneself, everybody in one's teams (reporting to one or not) and everybody who reports to one
+     * (WorkModelService::getTeamPeople). Administrators see everybody; a person picked in the search filter is kept.
+     * Applied to a copy of the list's query, so the search filter does not show it as a filter of its own.
+     */
+    protected function scopeQuery(TimesheetQuery $query): TimesheetQuery
+    {
+        $user = $this->getUser();
+        if ($user->canSeeAllData() || $query->getUser() !== null || $query->hasUsers()) {
+            return $query;
+        }
+        $scoped = clone $query;
+        $people = $this->workModels->getTeamPeople($user);
+        foreach ($people !== [] ? $people : [$user] as $person) {
+            $scoped->addUser($person);
+        }
+
+        return $scoped;
     }
 
     /** the period of the dashboard, see getDashboardPeriod() */
@@ -547,7 +570,8 @@ final class TimesheetTeamController extends TimesheetAbstractController
 
         $teamUsers = null;
         if (!$user->isAdmin() && !$user->isSuperAdmin()) {
-            $teamUsers = $this->workModels->getAssignableUsers($user);
+            // $teamUsers = $this->workModels->getAssignableUsers($user);
+            $teamUsers = $this->workModels->getTeamPeople($user);
             $teamUsers = $teamUsers !== [] ? $teamUsers : [$user];
         }
 

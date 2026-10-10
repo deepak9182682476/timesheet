@@ -352,6 +352,27 @@ final class WorkModelService
     }
 
     /**
+     * "My team" for Team Dashboard and its exports: oneself, everybody in the teams one belongs to (whether they
+     * report to one or not) and everybody who reports to one, directly or further down.
+     *
+     * @return array<User>
+     */
+    public function getTeamPeople(User $user): array
+    {
+        $people = [(int) $user->getId() => $user];
+        foreach ($user->getTeams() as $team) {
+            foreach ($team->getUsers() as $member) {
+                $people[(int) $member->getId()] = $member;
+            }
+        }
+        foreach ($this->getAssignableUsers($user) as $person) {
+            $people[(int) $person->getId()] = $person;
+        }
+
+        return array_values($people);
+    }
+
+    /**
      * The people this person can assign an item to: themselves and everybody below them.
      *
      * @return array<User>

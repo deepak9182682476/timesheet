@@ -226,6 +226,8 @@
             exportTeams.forEach(function (id) { list.push(['teams[]', String(id)]); });
             // every entry, exported before or not
             list.push(['exported', '1']);
+            // the dashboard's whole team (also teammates who do not report to one), see ExportController::readScope
+            list.push(['scope', 'team']);
             return list;
         }
 
