@@ -141,12 +141,15 @@
 {% block navbar_start %}
     {% if app.user is not null and is_granted('IS_AUTHENTICATED_REMEMBERED') %}
         {% block navbar_extensions %}{% endblock %}
+        {# The live timer (start / stop) and "restart a recent activity" are hidden: time is logged as a date plus
+           a mandatory duration, so a running timer is not used. Remove the comment marks to bring them back.
         {% if is_granted('create_own_timesheet') %}
             {% include 'partials/ticktack.html.twig' %}
         {% endif %}
         {% if is_granted('view_own_timesheet') %}
             {% include 'partials/recent-activities.html.twig' %}
         {% endif %}
+        #}
         {% include 'partials/leave-notifications.html.twig' %}
         {% include 'partials/user-shortcuts.html.twig' %}
         {% block navbar_extensions_after %}
