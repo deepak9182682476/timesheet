@@ -63,7 +63,8 @@ final class TimesheetVoter extends Voter
 
     public function __construct(
         private readonly RolePermissionManager $permissionManager,
-        private readonly LockdownService $lockdownService
+        private readonly LockdownService $lockdownService,
+        private readonly \App\Timesheet\WeeklyCutoffService $weeklyCutoff
     )
     {
     }
@@ -175,6 +176,11 @@ final class TimesheetVoter extends Voter
             return false;
         }
 
+        // weekly cut-off: own week by its last day, the manager's a week later, then only admins
+        if (!$this->weeklyCutoff->isAllowed($user, $timesheet)) {
+            return false;
+        }
+
         return !$this->isProjectLocked($timesheet, $timesheet->getBegin());
     }
 
@@ -279,6 +285,11 @@ final class TimesheetVoter extends Voter
             return false;
         }
 
+        // weekly cut-off (see WeeklyCutoffService)
+        if (!$this->weeklyCutoff->isAllowed($user, $timesheet)) {
+            return false;
+        }
+
         // if a project is "locked until" the timesheet cannot be stopped.
         // the user needs to be able to edit it, in order to change the start date.
         // do not change order of calls: the check is here, because the isProjectLocked() comes directly afterward.
@@ -296,6 +307,11 @@ final class TimesheetVoter extends Voter
         }
 
         if (!$this->isAllowedInLockdown($user, $timesheet)) {
+            return false;
+        }
+
+        // weekly cut-off (see WeeklyCutoffService)
+        if (!$this->weeklyCutoff->isAllowed($user, $timesheet)) {
             return false;
         }
 

@@ -131,6 +131,49 @@ final class TeamEventService
     }
 
     /**
+     * True once an event is over: after its last day, or on that day once its end time (or, without one, its start
+     * time) has passed, in the person's time zone. Leave lasts its whole day. Nothing is deleted: past events and
+     * leave stay in the database (calendar, reports); they are only no longer listed as upcoming.
+     */
+    public function isOver(TeamEvent $event, User $user): bool
+    {
+        $timezone = new \DateTimeZone($user->getTimezone());
+        $now = new \DateTimeImmutable('now', $timezone);
+        $today = $now->format('Y-m-d');
+        $lastDay = $event->getEndDate()?->format('Y-m-d');
+        if ($lastDay === null || $lastDay > $today) {
+            return false;
+        }
+        if ($lastDay < $today) {
+            return true;
+        }
+        if ($event->getType() === TeamEvent::TYPE_LEAVE) {
+            return false;
+        }
+        $time = $event->getEndTime() ?? $event->getStartTime();
+        if ($time === null) {
+            return false;
+        }
+
+        return $now->format('H:i:s') > $time->format('H:i:s');
+    }
+
+    /**
+     * The events and leave from today on that are not over yet (see isOver).
+     *
+     * @return array<TeamEvent>
+     */
+    public function getUpcomingForUser(User $user, \DateTimeInterface $to, ?int $limit = null, bool $personal = false): array
+    {
+        $events = array_values(array_filter(
+            $this->getEventsForUser($user, new \DateTime('today'), $to, $limit !== null ? $limit + 10 : null, $personal),
+            fn (TeamEvent $event) => !$this->isOver($event, $user)
+        ));
+
+        return $limit !== null ? \array_slice($events, 0, $limit) : $events;
+    }
+
+    /**
      * Approved leave of the people in this user's teams (the user included) that is not over yet. It is listed
      * from the moment it is approved until the end of its last day, so leave for tomorrow shows until tomorrow
      * 11:59 pm and is gone after that. Leave waiting for a decision and rejected leave are not listed;

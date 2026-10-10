@@ -53,6 +53,8 @@ final class UpcomingEvents extends AbstractWidget
     public function getData(array $options = []): mixed
     {
         // personal view: the person's own leave and the events of their teams, never a colleague's leave
-        return $this->events->getEventsForUser($this->getUser(), new \DateTime('today'), new \DateTime('+90 days'), 8, true);
+        // return $this->events->getEventsForUser($this->getUser(), new \DateTime('today'), new \DateTime('+90 days'), 8, true);
+        // events that are over (their time today has passed) are left out
+        return $this->events->getUpcomingForUser($this->getUser(), new \DateTime('+90 days'), 8, true);
     }
 }

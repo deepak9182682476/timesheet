@@ -26,12 +26,15 @@ class TimesheetMultiUserEditForm extends TimesheetAdminEditForm
         $builder->add('users', UserType::class, [
             'label' => 'users',
             'multiple' => true,
-            'required' => false,
+            // 'required' => false,
+            // the people are picked here (only those of the chosen project are offered), so it cannot stay empty
+            'required' => true,
         ]);
 
-        $builder->add('teams', TeamType::class, [
-            'multiple' => true,
-            'required' => false,
-        ]);
+        // "Team" is not needed: the Users box already offers the people of the chosen project's teams
+        // $builder->add('teams', TeamType::class, [
+        //     'multiple' => true,
+        //     'required' => false,
+        // ]);
     }
 }

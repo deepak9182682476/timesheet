@@ -26,6 +26,8 @@ final class TeamEventExtension extends AbstractExtension
         private readonly Security $security,
         private readonly \App\Task\TaskService $tasks,
         private readonly \App\TeamEvent\AdditionalHoursService $additionalHours,
+        private readonly \App\Timesheet\WeeklyCutoffService $weeklyCutoff,
+        private readonly \App\WorkModel\WorkModelService $workModels,
     )
     {
     }
@@ -41,6 +43,8 @@ final class TeamEventExtension extends AbstractExtension
             new TwigFunction('approved_leave_days', [$this, 'approvedLeaveDays']),
             new TwigFunction('leave_days', [$this, 'leaveDays']),
             new TwigFunction('leave_days_label', [$this, 'leaveDaysLabel']),
+            new TwigFunction('timesheet_cutoff', [$this, 'timesheetCutoff']),
+            new TwigFunction('project_user_map', [$this, 'projectUserMap']),
         ];
     }
 
@@ -54,6 +58,39 @@ final class TeamEventExtension extends AbstractExtension
         } catch (\Throwable) {
             return $leave->getWorkingDays();
         }
+    }
+
+    /**
+     * Who works on each project (the members of its teams on Team Allocation), for the User box of the team
+     * time entry forms: it only offers the people of the chosen project. Projects without a team are left out
+     * (everybody can be picked for them).
+     *
+     * @return array<int, array<int>>
+     */
+    public function projectUserMap(): array
+    {
+        try {
+            $projectIds = $this->workModels->getProjectsWithTeams();
+
+            return array_filter($this->workModels->getProjectMembers($projectIds), static fn ($members) => $members !== null);
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * The weekly cut-off for the logged-in person, for the time entry forms (partials/cutoff-guard.html.twig).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function timesheetCutoff(): ?array
+    {
+        $user = $this->security->getUser();
+        if (!($user instanceof User)) {
+            return null;
+        }
+
+        return ['me' => (string) $user->getId()] + $this->weeklyCutoff->getOpenFrom($user);
     }
 
     /**

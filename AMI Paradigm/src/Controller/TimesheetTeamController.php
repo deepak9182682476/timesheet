@@ -95,7 +95,9 @@ final class TimesheetTeamController extends TimesheetAbstractController
                 /** @var ArrayCollection<User> $users */
                 $users = $createForm->get('users')->getData();
                 /** @var ArrayCollection<Team> $teams */
-                $teams = $createForm->get('teams')->getData();
+                // $teams = $createForm->get('teams')->getData();
+                // the Team box is switched off (TimesheetMultiUserEditForm): no teams then
+                $teams = $createForm->has('teams') ? $createForm->get('teams')->getData() : new ArrayCollection();
 
                 /** @var array<User> $allUsers */
                 $allUsers = $users->toArray();
@@ -111,6 +113,26 @@ final class TimesheetTeamController extends TimesheetAbstractController
                 foreach ($entry->getTags() as $tag) {
                     $entry->addTag($tag);
                     $tags[] = $tag;
+                }
+
+                // weekly cut-off for every person before anything is saved: one's own entry by the end of its week,
+                // one's people's a week later (see WeeklyCutoffService)
+                $cutoffProblems = [];
+                foreach ($allUsers as $user) {
+                    if ($entry->getBegin() !== null && ($message = $this->weeklyCutoff->getMessage($this->getUser(), $user, $entry->getBegin())) !== null) {
+                        $cutoffProblems[] = $message;
+                    }
+                }
+                if ($cutoffProblems !== []) {
+                    foreach (array_unique($cutoffProblems) as $message) {
+                        $createForm->get('begin_date')->addError(new \Symfony\Component\Form\FormError($message));
+                    }
+
+                    return $this->render('timesheet/edit.html.twig', [
+                        'timesheet' => $entry,
+                        'form' => $createForm->createView(),
+                        'template' => $this->getTrackingMode()->getEditTemplate(),
+                    ]);
                 }
 
                 $newTimesheets = [];
@@ -340,6 +362,63 @@ final class TimesheetTeamController extends TimesheetAbstractController
         return $projects;
     }
 
+    private \App\Timesheet\WeeklyCutoffService $weeklyCutoff;
+
+    #[\Symfony\Contracts\Service\Attribute\Required]
+    public function setWeeklyCutoff(\App\Timesheet\WeeklyCutoffService $weeklyCutoff): void
+    {
+        $this->weeklyCutoff = $weeklyCutoff;
+    }
+
+    /** the period of the dashboard, see getDashboardPeriod() */
+    private ?array $period = null;
+
+    /**
+     * Team Dashboard looks at this week, unless another range was picked (kept for the session).
+     * "This Week" goes back to the current week.
+     */
+    protected function getDashboardPeriod(Request $request, string $context = ''): ?array
+    {
+        $session = $request->getSession();
+        $key = 'team_dashboard_period';
+        $timezone = new \DateTimeZone($this->getUser()->getTimezone());
+
+        // a range picked on another tab or project does not carry over: back to this week
+        if ($session->get($key . '_context') !== $context) {
+            $session->remove($key);
+        }
+
+        if ($request->query->get('period') === 'week') {
+            $session->remove($key);
+        } elseif ($request->query->has('from') && $request->query->has('to')) {
+            $from = \DateTime::createFromFormat('!Y-m-d', (string) $request->query->get('from'), $timezone);
+            $to = \DateTime::createFromFormat('!Y-m-d', (string) $request->query->get('to'), $timezone);
+            if ($from !== false && $to !== false) {
+                if ($to < $from) {
+                    [$from, $to] = [$to, $from];
+                }
+                $session->set($key, [$from->format('Y-m-d'), $to->format('Y-m-d')]);
+                $session->set($key . '_context', $context);
+            }
+        }
+
+        $stored = $session->get($key);
+        if (\is_array($stored) && \count($stored) === 2) {
+            $begin = new \DateTime($stored[0] . ' 00:00:00', $timezone);
+            $end = new \DateTime($stored[1] . ' 23:59:59', $timezone);
+            $week = false;
+        } else {
+            $factory = $this->getDateTimeFactory();
+            $begin = $factory->getStartOfWeek();
+            $begin->setTime(0, 0, 0);
+            $end = $factory->getEndOfWeek();
+            $end->setTime(23, 59, 59);
+            $week = true;
+        }
+
+        return $this->period = ['begin' => $begin, 'end' => $end, 'week' => $week];
+    }
+
     /**
      * Team Dashboard always has its tabs, even before anybody logged time on that kind of work:
      * All, Project, Non-Project and, beside it, Pre-Sales (earlier only the kinds in use were shown).
@@ -459,8 +538,11 @@ final class TimesheetTeamController extends TimesheetAbstractController
     {
         $user = $this->getUser();
         $query = new \App\Repository\Query\ExportQuery();
-        $query->setBegin($this->getDateTimeFactory()->getStartOfMonth());
-        $query->setEnd($this->getDateTimeFactory()->getEndOfMonth());
+        // the export starts with the dashboard's period (this week, or the range picked above the charts)
+        // $query->setBegin($this->getDateTimeFactory()->getStartOfMonth());
+        // $query->setEnd($this->getDateTimeFactory()->getEndOfMonth());
+        $query->setBegin($this->period !== null ? clone $this->period['begin'] : $this->getDateTimeFactory()->getStartOfWeek());
+        $query->setEnd($this->period !== null ? clone $this->period['end'] : $this->getDateTimeFactory()->getEndOfWeek());
         $query->setCurrentUser($user);
 
         $teamUsers = null;

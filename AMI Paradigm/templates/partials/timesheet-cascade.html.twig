@@ -79,13 +79,36 @@
             if (f.task === null) { return; }
             var project = f.project !== null ? f.project.value : '';
             var activity = f.activity !== null ? f.activity.value : '';
-            narrow(f.task, function (option) {
+            // var result = narrow(... (the Task was optional)
+            var result = narrow(f.task, function (option) {
                 var forProject = project === '' || !option.dataset.project || option.dataset.project === project;
                 // a standard task belongs to exactly one activity
                 if (option.dataset.standard === '1') { return activity !== '' && option.dataset.activity === activity; }
                 var forActivity = activity === '' || !option.dataset.activity || option.dataset.activity === activity;
                 return forProject && forActivity;
             });
+            // the Task is mandatory whenever the picked activity has tasks to choose from (checked on submit, below)
+            var label = (f.task.closest('.mb-3') || f.task.parentNode).querySelector('label');
+            if (label !== null) { label.classList.toggle('required', result !== undefined && result.count > 0); }
+        }
+
+        /* Task mandatory: a form that offers tasks for the picked activity is not sent without one */
+        if (!window.__taskRequiredCheck) {
+            window.__taskRequiredCheck = true;
+            document.addEventListener('submit', function (event) {
+                var form = event.target;
+                var task = form.querySelector ? form.querySelector('select[data-name="task"]') : null;
+                // projects with a model check their own Task box (work-item-cascade)
+                if (task === null || form.dataset.wiMode === 'model' || task.disabled) { return; }
+                var row = task.closest('.mb-3') || task.parentNode;
+                if (row.closest('.d-none') !== null) { return; }
+                var offered = Array.prototype.some.call(task.options, function (o) { return o.value !== ''; });
+                if (offered && task.value === '') {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    hint(task, 'Please pick the Task.');
+                }
+            }, true);
         }
 
         /* leave and bench have no work status: the Status box is hidden while one of these phases is picked */

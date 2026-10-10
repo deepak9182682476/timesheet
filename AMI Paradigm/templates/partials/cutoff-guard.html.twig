@@ -1,0 +1,101 @@
+{#
+    Weekly cut-off in the time entry form (Log Time, Calendar Entry, Team Dashboard): as soon as a date of a closed
+    week is picked, the form says so and cannot be saved. Own time: up to the last day of the week. Time of one's
+    people: one more week. Administrators: always. Saving is refused on the server as well (TimesheetWeeklyCutoffValidator).
+#}
+{% set cutoff = timesheet_cutoff() %}
+{% if cutoff is not null %}
+<script type="text/javascript">
+    (function () {
+        window.__timesheetCutoff = {{ cutoff|json_encode|raw }};
+        if (window.__cutoffGuard) { return; }
+        window.__cutoffGuard = true;
+
+        function readDate(input) {
+            var format = input.dataset.format || 'YYYY-MM-DD';
+            var names = format.match(/[A-Za-z]+/g) || [];
+            var numbers = input.value.match(/\d+/g) || [];
+            if (names.length !== numbers.length) { return null; }
+            var parts = {};
+            names.forEach(function (name, index) { parts[name.charAt(0).toUpperCase()] = parseInt(numbers[index], 10); });
+            if (!parts.Y || !parts.M || !parts.D) { return null; }
+            if (parts.Y < 100) { parts.Y += 2000; }
+            return parts.Y + '-' + (parts.M < 10 ? '0' : '') + parts.M + '-' + (parts.D < 10 ? '0' : '') + parts.D;
+        }
+
+        function check(form) {
+            var cfg = window.__timesheetCutoff;
+            var input = form.querySelector('input[id$="_begin_date"]');
+            if (cfg === null || input === null) { return; }
+            var row = input.closest('.mb-3');
+            if (row === null || row.parentNode === null) { return; }
+
+            // whose time: the "User" box of a team form, or oneself
+            var single = form.querySelector('select[id$="_user"]');
+            var several = form.querySelector('select[id$="_users"]');
+            // var self = several === null && (single === null || single.value === '' || single.value === cfg.me);
+            // "For Multiple Users": one's own entry among them follows one's own (earlier) cut-off
+            var self = several !== null
+                ? Array.prototype.some.call(several.options, function (o) { return o.selected && o.value === cfg.me; })
+                : (single === null || single.value === '' || single.value === cfg.me);
+
+            var day = readDate(input);
+            var from = self ? cfg.self_from : cfg.team_from;
+            var closed = !cfg.admin && day !== null && day < from;
+
+            var notice = row.parentNode.querySelector('.cutoff-notice');
+            if (closed) {
+                if (notice === null) {
+                    notice = document.createElement('div');
+                    notice.className = 'cutoff-notice alert alert-danger d-block mb-3';
+                    row.parentNode.insertBefore(notice, row.nextSibling);
+                }
+                notice.innerHTML = '';
+                var title = document.createElement('strong');
+                title.textContent = 'Cut-off date exceeded.';
+                var text = document.createElement('div');
+                text.textContent = self
+                    ? 'You should enter each week\'s timesheet by the last day of that week (11:59 PM). Please contact your manager.'
+                    : 'You cannot enter your employee\'s records for this week any more: managers can enter them until the end of the following week. Please contact the admin.';
+                notice.appendChild(title);
+                notice.appendChild(text);
+            } else if (notice !== null) {
+                notice.remove();
+            }
+
+            var holder = form.closest('.modal-content') || form;
+            holder.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
+                if (closed) { button.disabled = true; button.dataset.cutoffDisabled = '1'; }
+                else if (button.dataset.cutoffDisabled === '1') { button.disabled = false; delete button.dataset.cutoffDisabled; }
+            });
+        }
+
+        function scan(root) {
+            if (!root.querySelectorAll) { return; }
+            root.querySelectorAll('input[id$="_begin_date"]').forEach(function (input) {
+                var form = input.closest('form');
+                // after the form's own scripts and the leave check
+                if (form !== null) { window.setTimeout(function () { check(form); }, 500); }
+            });
+        }
+
+        ['change', 'input'].forEach(function (type) {
+            document.addEventListener(type, function (event) {
+                var el = event.target;
+                if (el.matches && (el.matches('input[id$="_begin_date"]') || el.matches('select[id$="_user"]') || el.matches('select[id$="_users"]')) && el.form) {
+                    window.setTimeout(function () { check(el.form); }, 50);
+                }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            scan(document);
+            new MutationObserver(function (changes) {
+                changes.forEach(function (change) {
+                    change.addedNodes.forEach(function (node) { scan(node); });
+                });
+            }).observe(document.body, {childList: true, subtree: true});
+        });
+    })();
+</script>
+{% endif %}

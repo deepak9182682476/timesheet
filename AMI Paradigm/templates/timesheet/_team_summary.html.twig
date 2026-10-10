@@ -13,7 +13,10 @@
         <div class="card h-100">
             <div class="card-header">
                 <h3 class="card-title">{{ summary.project is not null ? summary.project : 'Team Hours' }}</h3>
-                <div class="card-subtitle ms-2 text-secondary small">Follows the search filters of the list below</div>
+                {# <div class="card-subtitle ms-2 text-secondary small">Follows the search filters of the list below</div> #}
+                {% if period is defined and period is not null %}
+                    <div class="card-subtitle ms-2 text-secondary small">{{ period.week ? 'This week, ' : '' }}{{ period.begin|date('d-M-y') }} to {{ period.end|date('d-M-y') }}</div>
+                {% endif %}
             </div>
             <div class="card-body">
                 <div class="row g-3">

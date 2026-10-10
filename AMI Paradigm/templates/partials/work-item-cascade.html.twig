@@ -218,7 +218,11 @@
             // var own = picked !== null && (who === null || picked.users.indexOf(who) !== -1 || picked.id === s.data.current);
             var own = picked !== null && (worksOn(s, picked, who) || picked.id === s.data.current);
             s.item.value = deepest >= s.activityLevel && own ? s.selects[deepest].value : '';
-            s.needTask = deepest === s.activityLevel && !own && s.selects.length > s.activityLevel + 1;
+            // s.needTask = deepest === s.activityLevel && !own && s.selects.length > s.activityLevel + 1;
+            // the Task is mandatory whenever the picked activity has tasks to choose from
+            var taskSelect = s.selects.length > s.activityLevel + 1 ? s.selects[s.activityLevel + 1] : null;
+            var hasTasks = taskSelect !== null && Array.prototype.some.call(taskSelect.options, function (o) { return o.value !== ''; });
+            s.needTask = deepest === s.activityLevel && (hasTasks || (!own && taskSelect !== null));
             if (s.selects.length > s.activityLevel + 1) {
                 var taskLabel = row(s.selects[s.activityLevel + 1]).querySelector('label');
                 if (taskLabel !== null) { taskLabel.classList.toggle('required', s.needTask === true); }
@@ -412,7 +416,8 @@
             if (form._wi === undefined || form.dataset.wiMode !== 'model') { return; }
             var s = form._wi;
             sync(s);
-            if (s.item.value !== '') { return; }
+            // if (s.item.value !== '') { return; }
+            if (s.item.value !== '' && !s.needTask) { return; }
             event.preventDefault();
             event.stopImmediatePropagation();
             var missing = null;

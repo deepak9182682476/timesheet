@@ -541,6 +541,16 @@ final class WorkModelService
     }
 
     /**
+     * The projects that have at least one team on Team Allocation.
+     *
+     * @return array<int>
+     */
+    public function getProjectsWithTeams(): array
+    {
+        return array_map('intval', $this->entityManager->getConnection()->fetchFirstColumn('SELECT DISTINCT project_id FROM kimai2_projects_teams'));
+    }
+
+    /**
      * The teams linked to a project on Team Allocation (none: the project is open to everybody).
      *
      * @return array<int>
@@ -1094,6 +1104,11 @@ final class WorkModelService
         }
         if ($item->getLevel() < $this->getActivityLevel($project)) {
             return 'Please pick ' . $wanted . ' for this project.';
+        }
+        // the Task is mandatory when the picked activity has tasks (new entries; older ones can still be corrected)
+        if ($timesheet->getId() === null && $item->getLevel() === $this->getActivityLevel($project)
+            && ($this->countChildren([$item])[(int) $item->getId()] ?? 0) > 0) {
+            return 'Please pick the ' . ($levels[$this->getActivityLevel($project) + 1] ?? 'Task') . ' as well: it is mandatory.';
         }
 
         // who it is assigned to is checked when the entry is made; later corrections of the entry stay possible.

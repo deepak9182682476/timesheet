@@ -42,6 +42,7 @@ final class QuickEntryController extends AbstractController
         private readonly FavoriteRecordService $favoriteRecordService,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly WorkingTimeService $workingTimeService,
+        private readonly \App\Timesheet\WeeklyCutoffService $weeklyCutoff,
     )
     {
     }
@@ -151,6 +152,12 @@ final class QuickEntryController extends AbstractController
 
         // this should also check via lock service
         $locked = $this->workingTimeService->isApproved($user, $endWeek);
+
+        // weekly cut-off: the week can no longer be entered by the person looking at it (see WeeklyCutoffService)
+        $cutoffMessage = $this->weeklyCutoff->getMessage($this->getUser(), $user, $startWeek);
+        if ($cutoffMessage !== null) {
+            $locked = true;
+        }
 
         if (!$locked) {
             // attach recent activities
@@ -326,6 +333,7 @@ final class QuickEntryController extends AbstractController
             'form' => $form->createView(),
             'metaColumns' => $metaFields,
             'locked' => $locked,
+            'cutoff_message' => $cutoffMessage,
         ]);
     }
 }

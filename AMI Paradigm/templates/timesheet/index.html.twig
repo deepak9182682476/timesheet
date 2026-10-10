@@ -14,6 +14,23 @@
         </ul>
     {% endif %}
 
+    {# Team Dashboard: the period of the charts and the list - this week, or a range the person picks #}
+    {% if period is defined and period is not null %}
+        <form method="get" action="{{ path(listRoute) }}" class="d-flex flex-wrap align-items-center gap-2 mb-3 team-period">
+            <input type="hidden" name="view" value="{{ listView }}">
+            <span class="fw-bold me-1"><i class="far fa-calendar-alt me-1 text-secondary"></i>Date Range</span>
+            <input type="date" name="from" value="{{ period.begin|date('Y-m-d') }}" class="form-control form-control-sm" style="width: auto" required aria-label="From">
+            <span class="text-secondary">to</span>
+            <input type="date" name="to" value="{{ period.end|date('Y-m-d') }}" class="form-control form-control-sm" style="width: auto" required aria-label="To">
+            <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+            {% if period.week %}
+                <span class="badge bg-blue-lt ms-1">This Week</span>
+            {% else %}
+                <a href="{{ path(listRoute, {'view': listView, 'period': 'week'}) }}" class="btn btn-sm">This Week</a>
+            {% endif %}
+        </form>
+    {% endif %}
+
     {# Team Dashboard, "Project" tab: the projects to pick from (see TimesheetTeamController::getProjectChoices) #}
     {% if project_choices is defined and project_choices is not empty %}
         <div class="d-flex flex-wrap align-items-center gap-2 mb-3 team-project-choices">
@@ -118,7 +135,9 @@
 {% endblock %}
 
 {% block status %}
-    {% if stats.duration > 0 %}
+    {# {% if stats.duration > 0 %} #}
+    {# Team Dashboard: no total next to the title, the pies show it #}
+    {% if stats.duration > 0 and (listRoute is not defined or listRoute != 'admin_timesheet') %}
         {% from "macros/status.html.twig" import status_duration %}
         {{ status_duration(stats.duration|duration) }}
     {% endif %}

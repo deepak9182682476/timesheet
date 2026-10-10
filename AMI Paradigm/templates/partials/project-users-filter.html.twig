@@ -1,0 +1,94 @@
+{#
+    Team time entry forms (Team Dashboard > Create, For Multiple Users): the User box only offers the people of the
+    chosen project, that is the members of its teams on Team Allocation. A project without a team offers everybody.
+    Long lists of people scroll inside the drop-down.
+#}
+{% if is_granted('create_other_timesheet') %}
+<style>
+    /* long lists (people, projects ...) scroll inside the drop-down instead of running off the pop-up */
+    .ts-dropdown .ts-dropdown-content { max-height: 240px; overflow-y: auto; }
+    /* the people list of a pop-up opens over the page (not inside the pop-up), above the pop-up itself */
+    body > .ts-dropdown.people-dropdown { z-index: 1100; }
+</style>
+<script type="text/javascript">
+    (function () {
+        window.__projectUsers = {{ project_user_map()|json_encode|raw }};
+        if (window.__projectUsersFilter) { return; }
+        window.__projectUsersFilter = true;
+
+        /* In a pop-up the people list was cut off by the pop-up's bottom edge: it is opened over the page instead,
+           so every name can be seen and clicked without scrolling the pop-up. */
+        function freeDropdown(people) {
+            var ts = people.tomselect;
+            if (!ts || ts.__freed || people.closest('.modal') === null) { return; }
+            ts.__freed = true;
+            ts.settings.dropdownParent = 'body';
+            ts.dropdown.classList.add('people-dropdown');
+            document.body.appendChild(ts.dropdown);
+            // no room below the box (it is at the bottom of the pop-up): open upwards
+            var place = ts.positionDropdown.bind(ts);
+            ts.positionDropdown = function () {
+                place();
+                var box = ts.control.getBoundingClientRect();
+                var height = ts.dropdown.offsetHeight;
+                if (box.bottom + height > window.innerHeight && box.top - height > 0) {
+                    ts.dropdown.style.top = (box.top + window.scrollY - height - 2) + 'px';
+                }
+            };
+            // keep it under the box when the pop-up is scrolled
+            var body = people.closest('.modal-body') || people.closest('.modal');
+            body.addEventListener('scroll', function () { if (ts.isOpen) { ts.positionDropdown(); } });
+        }
+
+        function apply(form) {
+            var people = form.querySelector('select[id$="_user"], select[id$="_users"]');
+            if (people !== null) { freeDropdown(people); }
+            var project = form.querySelector('select[id$="_project"]');
+            if (project === null || people === null) { return; }
+            var allowed = window.__projectUsers[project.value];
+            var ts = people.tomselect;
+
+            if (ts) {
+                // keep every person the box had at the start, to give them back when another project is picked
+                if (!people.__allPeople) {
+                    people.__allPeople = Object.keys(ts.options).map(function (key) { return Object.assign({}, ts.options[key]); });
+                }
+                var keep = function (option) { return allowed === undefined || option.value === '' || allowed.indexOf(parseInt(option.value, 10)) !== -1; };
+                // people who are not on the project are taken off the selection
+                (Array.isArray(ts.items) ? ts.items.slice() : []).forEach(function (value) {
+                    if (!keep({value: value})) { ts.removeItem(value, true); }
+                });
+                ts.clearOptions();
+                ts.addOptions(people.__allPeople.filter(keep));
+                ts.refreshOptions(false);
+            } else {
+                Array.prototype.forEach.call(people.options, function (option) {
+                    var show = allowed === undefined || option.value === '' || allowed.indexOf(parseInt(option.value, 10)) !== -1;
+                    option.hidden = !show;
+                    if (!show && option.selected) { option.selected = false; }
+                });
+            }
+        }
+
+        document.addEventListener('change', function (event) {
+            var el = event.target;
+            if (el.matches && el.matches('select[id$="_project"]') && el.form) { apply(el.form); }
+        });
+
+        function scan(root) {
+            if (!root.querySelectorAll) { return; }
+            root.querySelectorAll('select[id$="_user"], select[id$="_users"]').forEach(function (select) {
+                var form = select.closest('form');
+                // after the drop-downs are set up
+                if (form !== null && form.querySelector('select[id$="_project"]') !== null) { window.setTimeout(function () { apply(form); }, 600); }
+            });
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            scan(document);
+            new MutationObserver(function (changes) {
+                changes.forEach(function (change) { change.addedNodes.forEach(function (node) { scan(node); }); });
+            }).observe(document.body, {childList: true, subtree: true});
+        });
+    })();
+</script>
+{% endif %}

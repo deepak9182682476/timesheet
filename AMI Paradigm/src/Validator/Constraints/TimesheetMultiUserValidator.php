@@ -37,11 +37,12 @@ final class TimesheetMultiUserValidator extends ConstraintValidator
                 ->setCode(TimesheetMultiUser::MISSING_USER_OR_TEAM)
                 ->addViolation();
 
-            $this->context->buildViolation('You must select at least one user or team.')
-                ->atPath('teams')
-                ->setTranslationDomain('validators')
-                ->setCode(TimesheetMultiUser::MISSING_USER_OR_TEAM)
-                ->addViolation();
+            // the Team box is switched off (TimesheetMultiUserEditForm): the message is shown under Users only
+            // $this->context->buildViolation('You must select at least one user or team.')
+            //     ->atPath('teams')
+            //     ->setTranslationDomain('validators')
+            //     ->setCode(TimesheetMultiUser::MISSING_USER_OR_TEAM)
+            //     ->addViolation();
         }
     }
 }

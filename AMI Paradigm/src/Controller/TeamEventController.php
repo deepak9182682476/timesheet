@@ -44,7 +44,9 @@ final class TeamEventController extends AbstractController
     {
         $user = $this->getUser();
         $today = new \DateTime('today');
-        $upcoming = $this->events->getEventsForUser($user, $today, new \DateTime('+5 years'));
+        // $upcoming = $this->events->getEventsForUser($user, $today, new \DateTime('+5 years'));
+        // an event that is over (its time today has passed) is no longer listed; it stays stored
+        $upcoming = $this->events->getUpcomingForUser($user, new \DateTime('+5 years'));
         $past = $this->events->getPastEventsForUser($user);
 
         $editable = [];

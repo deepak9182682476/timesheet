@@ -11,9 +11,15 @@
             {{ form_start(form, {attr: {id: 'quick-entries-form', class: 'form-dataTable quick-entries'}}) }}
             {{ form_widget(form._token) }}
             {{ form_errors(form) }}
+            {% if cutoff_message is defined and cutoff_message is not null %}
+                {# weekly cut-off (WeeklyCutoffService): the whole week is closed for this person #}
+                <div class="alert alert-danger m-3" role="alert"><i class="fas fa-lock me-2"></i>{{ cutoff_message }}</div>
+            {% endif %}
         {% endblock %}
         {% block box_after %}
-            {% if locked %}
+            {% if cutoff_message is defined and cutoff_message is not null %}
+                {# weekly cut-off: the message is shown above the table, nothing can be saved #}
+            {% elseif locked %}
                 {{ widgets.alert('warning', 'The chosen date is already locked.'|trans({}, 'validators')) }}
             {% else %}
                 <input type="submit" value="{{ 'action.save'|trans }}" class="btn btn-primary" />

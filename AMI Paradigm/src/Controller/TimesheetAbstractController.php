@@ -139,6 +139,19 @@ abstract class TimesheetAbstractController extends AbstractController
         if ($chosenProject === null && ($single = $this->getViewProject($view)) !== null) {
             [$chosenProjectId, $chosenProject] = $single;
         }
+        // Team Dashboard: one period for the charts and the list (this week unless another range is picked).
+        // A date range of the search form still narrows it further.
+        // the range belongs to the tab and project it was picked on: another tab or project starts on this week again
+        // $period = $this->getDashboardPeriod($request);
+        $period = $this->getDashboardPeriod($request, $view . '|' . ($chosenProjectId ?? 0));
+        if ($period !== null) {
+            $listQuery = clone $listQuery;
+            $begin = $listQuery->getBegin();
+            $end = $listQuery->getEnd();
+            $listQuery->setBegin($begin !== null && $begin > $period['begin'] ? $begin : $period['begin']);
+            $listQuery->setEnd($end !== null && $end < $period['end'] ? $end : $period['end']);
+        }
+
         $summary = $this->getListSummary($listQuery, $view, $chosenProject);
 
         // With charts above the list, the entries are only shown after "View All Entries" (per tab and project).
@@ -266,6 +279,7 @@ abstract class TimesheetAbstractController extends AbstractController
             'chosen_project_id' => $chosenProjectId,
             'show_entries' => $showEntries,
             'summary' => $summary,
+            'period' => $period,
         ]);
     }
 
@@ -277,6 +291,16 @@ abstract class TimesheetAbstractController extends AbstractController
     protected function getProjectChoices(TimesheetQuery $query, string $view): array
     {
         return [];
+    }
+
+    /**
+     * The period a dashboard looks at, as ['begin' => ..., 'end' => ..., 'week' => bool] (none by default).
+     *
+     * @return array{begin: \DateTime, end: \DateTime, week: bool}|null
+     */
+    protected function getDashboardPeriod(Request $request, string $context = ''): ?array
+    {
+        return null;
     }
 
     /**
