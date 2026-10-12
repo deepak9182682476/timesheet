@@ -79,6 +79,17 @@ final class MenuSubscriber implements EventSubscriberInterface
         $additional = new MenuItemModel('additional_hours', 'Extra Hours Claim', 'additional_hours', [], 'fas fa-business-time');
         $additional->setChildRoutes(['additional_hours_new']);
         $leave->addChild($additional);
+        // work from home: the immediate supervisor approves it
+        // now asked for in Apply for Leave (leave type "Work from home") and listed on Leave & Comp-off
+        // $wfh = new MenuItemModel('wfh', 'WFH Request', 'wfh', [], 'fas fa-house-laptop');
+        // $wfh->setChildRoutes(['wfh_new']);
+        // $leave->addChild($wfh);
+        // who was physically present in the office, entered every day by an administrator
+        // only the system administrator (not project managers, who have the admin role as well)
+        // if ($auth->isGranted('ROLE_ADMIN')) {
+        if ($auth->isGranted('ROLE_SUPER_ADMIN')) {
+            $leave->addChild(new MenuItemModel('attendance', 'Attendance', 'attendance', [], 'fas fa-user-check'));
+        }
         $leave->addChild(new MenuItemModel('holiday_calendar', 'Holiday Calendar', 'holiday_calendar', [], 'fas fa-calendar-alt'));
         // only the section of the page that is open is shown expanded (not every section on every page)
         // $leave->setExpanded(true);

@@ -39,6 +39,7 @@ final class LeaveController extends AbstractController
         private readonly HolidayCalendar $calendar,
         private readonly LeaveTimesheetSync $timesheetSync,
         private readonly AdditionalHoursService $additionalHours,
+        private readonly \App\TeamEvent\WfhService $wfh,
     )
     {
     }
@@ -63,6 +64,22 @@ final class LeaveController extends AbstractController
         // the decisions on this page are no longer news for the bell
         $this->events->markDecisionsSeen($user);
 
+        // WFH requests ("Work from home" in Apply for Leave): mine, and those waiting for my decision
+        $myWfh = $this->wfh->getMine($user);
+        $teamWfh = $this->wfh->getTeamRequests($user);
+        $wfhCancellable = [];
+        $wfhDays = [];
+        foreach ($myWfh as $request) {
+            $wfhCancellable[$request->getId()] = $this->wfh->canCancel($user, $request);
+            $wfhDays[$request->getId()] = $this->wfh->countDays($request);
+        }
+        $wfhDecidable = [];
+        foreach ($teamWfh as $request) {
+            $wfhDecidable[$request->getId()] = $this->wfh->canDecide($user, $request);
+            $wfhDays[$request->getId()] = $this->wfh->countDays($request);
+        }
+        $this->wfh->markDecisionsSeen($user);
+
         return $this->render('leave/index.html.twig', [
             // 'page_setup' => new PageSetup('Leave'),
             'page_setup' => new PageSetup('Leave & Comp-off'),
@@ -75,6 +92,11 @@ final class LeaveController extends AbstractController
             'team_leave' => $team,
             'cancellable' => $cancellable,
             'decidable' => $decidable,
+            'my_wfh' => $myWfh,
+            'team_wfh' => $teamWfh,
+            'wfh_cancellable' => $wfhCancellable,
+            'wfh_decidable' => $wfhDecidable,
+            'wfh_days' => $wfhDays,
         ]);
     }
 
@@ -112,6 +134,25 @@ final class LeaveController extends AbstractController
             $leave->setEndDate($lastDay !== null ? clone $lastDay : clone $leave->getStartDate());
             if ($leave->getEndDate()->format('Y-m-d') < $leave->getStartDate()->format('Y-m-d')) {
                 $form->get('endDate')->addError(new FormError('The last day cannot be before the first day.'));
+            }
+
+            // "Work from home" is not leave: it is saved as a WFH request for the immediate supervisor
+            if ($form->isValid() && $leave->getTitle() === \App\TeamEvent\WfhService::LEAVE_KIND) {
+                $request = new \App\Entity\WfhRequest();
+                $request->setUser($user);
+                $request->setStartDate(clone $leave->getStartDate());
+                $request->setEndDate(clone $leave->getEndDate());
+                $request->setReason($leave->getDescription());
+                if (trim((string) $leave->getDescription()) === '') {
+                    $form->get('description')->addError(new FormError('Please give the reason for working from home.'));
+                } elseif (($problem = $this->wfh->check($request)) !== null) {
+                    $form->get($problem[0] === 'taken' ? 'startDate' : $problem[0])->addError(new FormError($problem[1]));
+                } else {
+                    $this->wfh->save($request);
+                    $this->flashSuccess('action.update.success');
+
+                    return $this->redirectToRoute('leave', ['_fragment' => 'my-wfh']);
+                }
             }
 
             // comp-off: one day (or part of one) for approved additional hours, within 30 days of the day worked
@@ -156,6 +197,8 @@ final class LeaveController extends AbstractController
                 continue;
             }
             $taken[] = [
+                // what blocks a WFH day: approved leave for the whole day
+                'approved' => $other->getStatus() === TeamEvent::STATUS_APPROVED && !$other->isPartDay(),
                 'optional' => $other->getTitle() === 'Optional holiday',
                 'from' => $other->getStartDate()->format('Y-m-d'),
                 'to' => $other->getEndDate()->format('Y-m-d'),
@@ -179,6 +222,14 @@ final class LeaveController extends AbstractController
             'optional_limit' => TeamEventService::OPTIONAL_HOLIDAYS_PER_YEAR,
             'festivals' => $this->calendar->getDaysByLocation(),
             'credit_days' => $creditDays,
+            // WFH: the days asked for already (not rejected), and the leave type that is a WFH request
+            'wfh_kind' => \App\TeamEvent\WfhService::LEAVE_KIND,
+            'wfh_taken' => array_values(array_map(static fn ($r) => [
+                'from' => $r->getStartDate()->format('Y-m-d'),
+                'to' => $r->getEndDate()->format('Y-m-d'),
+                'label' => $r->getStartDate()->format('d-M-y') . ($r->isMultiDay() ? ' to ' . $r->getEndDate()->format('d-M-y') : '') . ' (' . ($r->isApproved() ? 'Approved' : 'Waiting for approval') . ')',
+            ], array_filter($this->wfh->getMine($user), static fn ($r) => $r->getStatus() !== \App\Entity\WfhRequest::STATUS_REJECTED))),
+            'wfh_days_back' => \App\Entity\WfhRequest::DAYS_BACK,
         ]);
     }
 

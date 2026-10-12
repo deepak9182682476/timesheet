@@ -129,11 +129,23 @@ final class TimesheetWorkItemSubscriber implements EventSubscriberInterface
             'choice_attr' => static fn ($choice, $key, $value) => $attributes[(string) $value] ?? [],
             'placeholder' => '',
             'translation_domain' => false,
-            'attr' => ['class' => 'wi-grid-item', 'style' => 'min-width: 200px'],
+            // 'attr' => ['class' => 'wi-grid-item', 'style' => 'min-width: 200px'],
+            // the Project dropdown of each row offers only these projects (see partials/work-item-cascade.html.twig)
+            'attr' => ['class' => 'wi-grid-item', 'style' => 'min-width: 200px', 'data-allowed-projects' => json_encode($this->allowedProjects($user))],
         ]);
         $definition->setIsRequired(false);
         $definition->setIsVisible(true);
         $event->addField($definition);
+    }
+
+    /** @return array<int> */
+    private function allowedProjects(User $user): array
+    {
+        try {
+            return $this->models->getAllocatedProjectIds($user);
+        } catch (\Exception) {
+            return [];
+        }
     }
 
     public function onSave(TimesheetCreatePreEvent|TimesheetUpdatePreEvent $event): void

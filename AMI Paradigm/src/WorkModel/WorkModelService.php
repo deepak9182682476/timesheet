@@ -74,6 +74,8 @@ final class WorkModelService
     private ?array $projectModels = null;
     /** @var array<int, array<string, Activity>> the activities of each project by lower-case name */
     private array $activities = [];
+    /** ensureOthers() runs once per request */
+    private bool $othersChecked = false;
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -584,6 +586,30 @@ final class WorkModelService
         ));
     }
 
+    /**
+     * The projects a person may book on: those allocated to one of their teams (Team Allocation), plus
+     * "Non-Project Activities" and "Pre-Sales", which are open to everybody.
+     *
+     * @return array<int>
+     */
+    public function getAllocatedProjectIds(User $user): array
+    {
+        $userId = (int) $user->getId();
+        $ids = [];
+        foreach ($this->getProjectMembers($this->getProjectsWithTeams()) as $projectId => $members) {
+            if (\is_array($members) && \in_array($userId, $members, true)) {
+                $ids[] = (int) $projectId;
+            }
+        }
+        foreach ([$this->getNonProject(), $this->getPresalesProject(false)] as $open) {
+            if ($open !== null && $open->getId() !== null) {
+                $ids[] = (int) $open->getId();
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
     public function isProjectMember(int $projectId, int $userId): bool
     {
         $members = $this->getProjectMembers([$projectId])[$projectId] ?? null;
@@ -797,6 +823,93 @@ final class WorkModelService
 
     // ------------------------------------------------------------------ time entries
 
+    /** the name of the items made by ensureOthers() */
+    public const OTHERS = 'Others';
+
+    /**
+     * Every Agile or Waterfall project allocated to a team (Team Allocation) can be booked on, even before its
+     * tasks are created: where a level has nothing below it, an "Others" item is added, down to the Task.
+     * A project without anything gets Epic "Others" > Feature "Others" > User Story "Others" > Activity "Others"
+     * > Task "Others" (Module > Sub Module > Business Req > Activity > Task on Waterfall). An Activity "Others"
+     * always has a Task "Others". When "Others" is the only choice, the time
+     * entry form picks it by itself, so the person only enters the time and the description.
+     */
+    public function ensureOthers(): void
+    {
+        if ($this->othersChecked) {
+            return;
+        }
+        $this->othersChecked = true;
+
+        try {
+            $connection = $this->entityManager->getConnection();
+            $models = $this->getProjectModels();
+            $projectIds = array_values(array_filter(
+                $this->getProjectsWithTeams(),
+                static fn (int $id) => \in_array($models[$id] ?? null, [self::AGILE, self::WATERFALL], true)
+            ));
+            if ($projectIds === []) {
+                return;
+            }
+            $in = implode(',', $projectIds);
+            // both models have the Activity on the same level
+            $activityLevel = \count(self::LEVELS[self::AGILE]) - 2;
+
+            $empty = array_diff($projectIds, array_map('intval', $connection->fetchFirstColumn(
+                'SELECT DISTINCT project_id FROM kimai2_work_items WHERE project_id IN (' . $in . ')'
+            )));
+            // $open = array_map('intval', $connection->fetchFirstColumn(
+            //     'SELECT i.id FROM kimai2_work_items i WHERE i.project_id IN (' . $in . ') AND i.level < ?
+            //      AND NOT EXISTS (SELECT 1 FROM kimai2_work_items c WHERE c.parent_id = i.id)',
+            //     [$activityLevel]
+            // ));
+            // levels above the Activity with nothing below, and an Activity "Others" without its Task "Others"
+            $open = array_map('intval', $connection->fetchFirstColumn(
+                'SELECT i.id FROM kimai2_work_items i WHERE i.project_id IN (' . $in . ')
+                 AND (i.level < ? OR (i.level = ? AND i.name = ?))
+                 AND NOT EXISTS (SELECT 1 FROM kimai2_work_items c WHERE c.parent_id = i.id)',
+                [$activityLevel, $activityLevel, self::OTHERS]
+            ));
+            if ($empty === [] && $open === []) {
+                return;
+            }
+
+            foreach ($empty as $projectId) {
+                $project = $this->entityManager->find(Project::class, $projectId);
+                if ($project !== null) {
+                    $this->addOthers($project, null, $activityLevel);
+                }
+            }
+            foreach ($open as $itemId) {
+                $item = $this->find($itemId);
+                if ($item !== null && $item->getProject() !== null) {
+                    $this->addOthers($item->getProject(), $item, $activityLevel);
+                }
+            }
+            $this->entityManager->flush();
+        } catch (\Exception) {
+            // nothing gets in the way of entering time
+        }
+    }
+
+    /** "Others" below $parent (or at the top), down to the Task below the Activity */
+    private function addOthers(Project $project, ?WorkItem $parent, int $activityLevel): void
+    {
+        $level = $parent !== null ? $parent->getLevel() + 1 : 0;
+        // while ($level <= $activityLevel) {
+        while ($level <= $activityLevel + 1) {
+            $item = new WorkItem();
+            $item->setProject($project);
+            $item->setParent($parent);
+            $item->setName(self::OTHERS);
+            // after the items created by hand
+            $item->setPosition(999999);
+            $this->prepare($item);
+            $parent = $item;
+            $level++;
+        }
+    }
+
     /**
      * Everything the time entry form needs to offer the right items (see partials/work-item-cascade.html.twig).
      *
@@ -808,6 +921,9 @@ final class WorkModelService
      */
     public function getFormData(User $viewer, Timesheet $timesheet, bool $forOthers = false): array
     {
+        // an allocated project with nothing (or not everything) created in Task Creation gets "Others" to book on
+        $this->ensureOthers();
+
         $owner = $timesheet->getUser() ?? $viewer;
         $ownerId = (int) $owner->getId();
 
@@ -997,6 +1113,8 @@ final class WorkModelService
      */
     public function getBookableItems(User $user): array
     {
+        $this->ensureOthers();
+
         $userId = (int) $user->getId();
 
         $used = [];
@@ -1037,7 +1155,15 @@ final class WorkModelService
             $activityLevel = \count($levels) - 2;
             // if ($row['level'] < $activityLevel || (!isset($used[$id]) && !\in_array($userId, $row['effective'], true))) {
             $projectMembers = $members[$row['project']] ?? null;
-            if ($row['level'] < $activityLevel || (!isset($used[$id]) && $projectMembers !== null && !\in_array($userId, $projectMembers, true))) {
+            // if ($row['level'] < $activityLevel || (!isset($used[$id]) && $projectMembers !== null && !\in_array($userId, $projectMembers, true))) {
+            //     continue;
+            // }
+            // only the projects allocated to the person (one of their teams on Team Allocation), as on Log Time;
+            // Pre-Sales without a team stays open to everybody. What they booked on before always stays.
+            $allocated = $projectMembers !== null
+                ? \in_array($userId, $projectMembers, true)
+                : ($models[$row['project']] ?? null) === self::PRESALES;
+            if ($row['level'] < $activityLevel || (!isset($used[$id]) && !$allocated)) {
                 continue;
             }
             $candidates[$id] = true;

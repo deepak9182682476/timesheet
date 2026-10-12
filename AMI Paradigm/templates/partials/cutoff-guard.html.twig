@@ -54,9 +54,12 @@
                 var title = document.createElement('strong');
                 title.textContent = 'Cut-off date exceeded.';
                 var text = document.createElement('div');
+                // text.textContent = self
+                //     ? 'You should enter each week\'s timesheet by the last day of that week (11:59 PM). Please contact your manager.'
+                //     : 'You cannot enter your employee\'s records for this week any more: managers can enter them until the end of the following week. Please contact the admin.';
                 text.textContent = self
-                    ? 'You should enter each week\'s timesheet by the last day of that week (11:59 PM). Please contact your manager.'
-                    : 'You cannot enter your employee\'s records for this week any more: managers can enter them until the end of the following week. Please contact the admin.';
+                    ? 'You should enter each week\'s timesheet by the Monday after it (11:59 PM). Please contact your manager.'
+                    : 'You cannot enter your employee\'s records for this week any more: managers can enter them until the Monday a week after their own cut-off (11:59 PM). Please contact the admin.';
                 notice.appendChild(title);
                 notice.appendChild(text);
             } else if (notice !== null) {

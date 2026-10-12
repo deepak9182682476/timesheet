@@ -70,9 +70,16 @@ class UserEditType extends AbstractType
             'label' => 'account_number',
             'required' => $options['edit_employee_id'],
             'disabled' => !$options['edit_employee_id'],
-            'help' => $options['edit_employee_id'] ? 'Unique for every user, for example EMP1023.' : null,
+            // 'help' => $options['edit_employee_id'] ? 'Unique for every user, for example EMP1023.' : null,
+            'help' => $options['edit_employee_id'] ? 'A number, unique for every user, for example 1023.' : null,
             'translation_domain' => 'messages',
-            'constraints' => $options['edit_employee_id'] ? [new \Symfony\Component\Validator\Constraints\NotBlank(message: 'Enter the Employee ID.')] : [],
+            // the Employee ID is a number
+            'attr' => ['inputmode' => 'numeric', 'pattern' => '[0-9]+', 'maxlength' => 30, 'title' => 'Numbers only'],
+            // 'constraints' => $options['edit_employee_id'] ? [new \Symfony\Component\Validator\Constraints\NotBlank(message: 'Enter the Employee ID.')] : [],
+            'constraints' => $options['edit_employee_id'] ? [
+                new \Symfony\Component\Validator\Constraints\NotBlank(message: 'Enter the Employee ID.'),
+                new \Symfony\Component\Validator\Constraints\Regex(pattern: '/^[0-9]+$/', message: 'The Employee ID can only have numbers, for example 1023.'),
+            ] : [],
         ]);
 
         if ($this->configuration->isThemeAllowAvatarUrls()) {

@@ -25,7 +25,11 @@ use DateTimeInterface;
  */
 final class DailyWorkingTimeChart extends AbstractWidget
 {
-    public function __construct(private readonly TimesheetRepository $repository)
+    // public function __construct(private readonly TimesheetRepository $repository)
+    public function __construct(
+        private readonly TimesheetRepository $repository,
+        private readonly \App\Attendance\AttendanceService $attendance,
+    )
     {
     }
 
@@ -100,11 +104,14 @@ final class DailyWorkingTimeChart extends AbstractWidget
                 /** @var Project $project */
                 $project = $entry['project'];
 
-                $id = $project->getId() . '_' . $activity->getId();
+                // $id = $project->getId() . '_' . $activity->getId();
+                // each attendance state gets its own part of the bar (see AttendanceService::getEntryStates)
+                $id = $project->getId() . '_' . $activity->getId() . '_' . ($entry['state'] ?? '');
 
                 $activities[$id] = [
                     'activity' => $activity,
                     'project' => $project,
+                    'state' => $entry['state'] ?? '',
                 ];
             }
         }
@@ -151,6 +158,19 @@ final class DailyWorkingTimeChart extends AbstractWidget
 
         $timesheets = $qb->getQuery()->getResult();
 
+        // how the attendance shows each entry: '' normal, 'cement' (not present / not entered), 'wfh' (WFH waiting)
+        $states = [];
+        try {
+            $ids = array_map(static fn (Timesheet $t) => (int) $t->getId(), $timesheets);
+            foreach ($this->attendance->getEntryStates($ids, null) as $timesheetId => $state) {
+                // $states[$timesheetId] = $state === \App\Attendance\AttendanceService::STATE_WFH_PENDING ? 'wfh' : 'cement';
+                // waiting for approval (WFH or Extra Hours Claim): with a border
+                $states[$timesheetId] = \in_array($state, [\App\Attendance\AttendanceService::STATE_WFH_PENDING, \App\Attendance\AttendanceService::STATE_EXTRA_PENDING], true) ? 'wfh' : 'cement';
+            }
+        } catch (\Exception) {
+            $states = [];
+        }
+
         $results = [];
         /** @var Timesheet $result */
         foreach ($timesheets as $result) {
@@ -175,16 +195,19 @@ final class DailyWorkingTimeChart extends AbstractWidget
             if ($result->isBillable()) {
                 $results[$dateKey]['billable'] += $duration;
             }
+            $state = $states[(int) $result->getId()] ?? '';
             $detailsId =
                 $result->getProject()->getCustomer()->getId()
                 . '_' . ($result->getProject()?->getId() ?? '')
                 . '_' . ($result->getActivity()?->getId() ?? '')
+                . '_' . $state
             ;
 
             if (!isset($results[$dateKey]['details'][$detailsId])) {
                 $results[$dateKey]['details'][$detailsId] = [
                     'project' => $result->getProject(),
                     'activity' => $result->getActivity(),
+                    'state' => $state,
                     'duration' => 0,
                     'billable' => 0, // duration
                 ];

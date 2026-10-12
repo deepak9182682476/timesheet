@@ -28,16 +28,24 @@
                         {% for activityId, activity in activities -%}
                         {% set activityColor = activity.activity|color|default(activity.project|color|default(backgroundColor)) %}
                         {% set activityName = activity.activity.name %}
+                        {# attendance: not present / not entered yet - light cement; WFH waiting for approval - cement with a thick border #}
+                        {% set state = activity.state|default('') %}
+                        {% if state != '' %}{% set activityColor = '#e3e1db' %}{% endif %}
                         {
                             label: '{{ activityName }}',
                             backgroundColor: '{{ activityColor }}',
-                            borderColor: '#fff',
-                            borderWidth: 1,
+                            // borderColor: '#fff',
+                            // borderWidth: 1,
+                            borderColor: '{{ state == 'wfh' ? '#6f6a60' : '#fff' }}',
+                            borderWidth: {{ state == 'wfh' ? 3 : 1 }},
+                            // a full box around a WFH part (by default the bottom side is left out)
+                            borderSkipped: {{ state == 'wfh' ? 'false' : "'start'" }},
+                            attendance: '{{ state }}',
                             data: [
                                 {%- for day in data -%}
                                     {% set realDayData = null %}
                                     {%- for entry in day.details -%}
-                                        {% set loopId = (entry.project.id ~ '_' ~ entry.activity.id) %}
+                                        {% set loopId = (entry.project.id ~ '_' ~ entry.activity.id ~ '_' ~ entry.state|default('')) %}
                                         {%- if loopId == activityId -%}
                                             {% set realDayData = entry.duration|chart_duration %}
                                         {%- endif -%}
@@ -54,7 +62,7 @@
                                 {%- for day in data -%}
                                     {% set realDayData = null %}
                                     {%- for entry in day.details -%}
-                                        {% set loopId = (entry.project.id ~ '_' ~ entry.activity.id) %}
+                                        {% set loopId = (entry.project.id ~ '_' ~ entry.activity.id ~ '_' ~ entry.state|default('')) %}
                                         {%- if loopId == activityId -%}
                                             {% set realDayData = {duration: entry.duration|duration, billable: day.totalDurationBillable|duration, project: entry.project.name, customer: entry.project.customer.name, activity: entry.activity.name, total: day.totalDuration|duration} %}
                                         {%- endif -%}
@@ -114,7 +122,9 @@
                             callbacks: {
                                 label: function(tooltipItem) {
                                     const tooltipData = tooltipItem.dataset.realData[tooltipItem.dataIndex];
-                                    return ' ' + tooltipData.duration + ': ' + tooltipData.activity;
+                                    // return ' ' + tooltipData.duration + ': ' + tooltipData.activity;
+                                    var notes = {cement: ' (not present / attendance not entered, or extra hours not claimed)', wfh: ' (WFH or Extra Hours Claim waiting for approval)'};
+                                    return ' ' + tooltipData.duration + ': ' + tooltipData.activity + (notes[tooltipItem.dataset.attendance] || '');
                                 },
                                 beforeTitle: function(tooltipItems) {
                                     const tooltipItem = tooltipItems[0];

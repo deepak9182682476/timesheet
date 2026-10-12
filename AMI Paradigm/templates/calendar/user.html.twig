@@ -2,6 +2,8 @@
 {% import "macros/widgets.html.twig" as widgets %}
 
 {% block main %}
+    {{ include('partials/attendance-shading.html.twig') }}
+    {{ include('partials/calendar-day-colors.html.twig') }}
     <div class="row">
         {% set hasTwoColumns = (config.dragDropAmount > 0 and dragAndDrop is not empty and (dragAndDrop|filter(s => s.entries|length > 0)|length > 0)) or form is not null %}
         {% if hasTwoColumns %}
@@ -238,6 +240,10 @@
                 Object.assign({}, calendarOptions, {{ config|json_encode|raw }})
             );
             calendar.render();
+            // time entries follow the attendance: light cement background, a thick border while WFH waits for approval
+            if (window.amiAttendanceShading) { window.amiAttendanceShading.calendar(calendar.getCalendar()); }
+            // the days: weekend / holiday, work from home, comp-off, optional holiday, leave
+            if (window.amiCalendarDayColors) { window.amiCalendarDayColors(calendar.getCalendar(), {{ user.id }}); }
             // events of the day: the details as a tooltip on mouse-over
             document.getElementById('{{ calendarSelector }}').addEventListener('mouseover', function (domEvent) {
                 const el = domEvent.target.closest ? domEvent.target.closest('.ami-team-event') : null;

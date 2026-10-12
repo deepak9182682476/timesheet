@@ -70,6 +70,7 @@
 
 {% block head %}
     {{ parent() }}
+    {{ include('partials/attendance-shading.html.twig') }}
     {% if summary is defined and summary is not null %}
         {{ encore_entry_script_tags('chart') }}
     {% endif %}
@@ -160,6 +161,8 @@
     {% if not entry.end %}
         {% set class = class ~ ' recording' %}
     {% endif %}
+    {# the entry's ID: the attendance shading (partials/attendance-shading.html.twig) is looked up by it #}
+    data-entry-id="{{ entry.id }}"
     {% if is_granted('edit', entry) %} class="modal-ajax-form open-edit{{ class }}" data-href="{{ path(editRoute, {'id': entry.id}) }}"{% endif %}
 {% endblock %}
 

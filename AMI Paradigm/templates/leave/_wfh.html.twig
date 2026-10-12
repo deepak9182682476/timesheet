@@ -1,0 +1,88 @@
+{# WFH requests on the Leave & Comp-off page ("Work from home" in Apply for Leave): mine, and my people's waiting for my decision #}
+{% import "macros/widgets.html.twig" as widgets %}
+{% set wfhToken = csrf_token('wfh_action') %}
+
+{% macro wfh_status(item) %}
+    {% set colors = {'pending': 'warning', 'approved': 'success', 'rejected': 'danger'} %}
+    {% set labels = {'pending': 'Waiting for approval', 'approved': 'Approved', 'rejected': 'Rejected'} %}
+    <span class="badge bg-{{ colors[item.status] ?? 'secondary' }} text-white">{{ labels[item.status] ?? item.status }}</span>
+    {% if not item.pending and item.decidedBy is not null %}<div class="text-secondary small">by {{ item.decidedBy.displayName }}</div>{% endif %}
+    {% if item.status == 'rejected' and item.decisionComment is not empty %}
+        <div class="small mt-1"><span class="text-secondary">Reason:</span> {{ item.decisionComment|nl2br }}</div>
+    {% endif %}
+{% endmacro %}
+
+{% macro wfh_days(item, count) %}
+    {{ item.startDate|date_format('d-M-y') }}{% if item.multiDay %} to {{ item.endDate|date_format('d-M-y') }}{% endif %}
+    <div class="text-secondary small">{% if item.multiDay %}{{ count }} working {{ count == 1 ? 'day' : 'days' }}{% else %}{{ item.startDate|date_format('l') }}{% endif %}</div>
+{% endmacro %}
+
+{% if my_wfh is not empty %}
+    <div class="card mb-3" id="my-wfh">
+        <div class="card-header"><h3 class="card-title">My Work From Home</h3></div>
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                <tr><th>Date</th><th>Reason</th><th>{{ 'status'|trans }}</th><th class="w-1"></th></tr>
+                </thead>
+                <tbody>
+                {% for item in my_wfh %}
+                    <tr>
+                        <td class="text-nowrap">{{ _self.wfh_days(item, wfh_days[item.id] ?? 0) }}</td>
+                        <td class="text-secondary">{{ item.reason|default('')|nl2br }}</td>
+                        <td>{{ _self.wfh_status(item) }}</td>
+                        <td class="text-nowrap">
+                            {% if wfh_cancellable[item.id] ?? false %}
+                                <form method="post" action="{{ path('wfh_cancel', {'id': item.id}) }}" class="wfh-cancel-form">
+                                    <input type="hidden" name="_token" value="{{ wfhToken }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+
+{% if team_wfh is not empty %}
+    <div class="card mb-3" id="team-wfh">
+        <div class="card-header"><h3 class="card-title">Team Work From Home Requests</h3></div>
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                <tr><th>Person</th><th>Date</th><th>Reason</th><th>{{ 'status'|trans }}</th><th class="w-1"></th></tr>
+                </thead>
+                <tbody>
+                {% for item in team_wfh %}
+                    <tr>
+                        <td class="text-nowrap">{{ widgets.user_avatar(item.user, false, 'avatar-rounded avatar-xs me-1') }} {{ item.user.displayName }}</td>
+                        <td class="text-nowrap">{{ _self.wfh_days(item, wfh_days[item.id] ?? 0) }}</td>
+                        <td class="text-secondary">{{ item.reason|default('')|nl2br }}</td>
+                        <td>{{ _self.wfh_status(item) }}</td>
+                        <td class="text-nowrap">
+                            {% if item.pending and (wfh_decidable[item.id] ?? false) %}
+                                <div class="btn-list flex-nowrap justify-content-end">
+                                    <form method="post" action="{{ path('wfh_decide', {'id': item.id, 'decision': 'approve'}) }}">
+                                        <input type="hidden" name="_token" value="{{ wfhToken }}">
+                                        <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                    </form>
+                                    {# the reason box of the leave page; a WFH request is only rejected with a reason #}
+                                    <button type="button" class="btn btn-sm btn-outline-danger leave-reject-button" data-action="{{ path('wfh_decide', {'id': item.id, 'decision': 'reject'}) }}" data-who="{{ item.user.displayName }}" data-what="work from home" data-required="1">Reject</button>
+                                </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+<script type="text/javascript">
+    document.querySelectorAll('.wfh-cancel-form').forEach(function (form) {
+        form.addEventListener('submit', function (event) { if (!window.confirm('Cancel this work from home request?')) { event.preventDefault(); } });
+    });
+</script>

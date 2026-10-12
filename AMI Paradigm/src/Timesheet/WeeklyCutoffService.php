@@ -14,8 +14,8 @@ use App\Entity\User;
 
 /**
  * Weekly cut-off of timesheets, following the hierarchy:
- * - everybody enters their own week by its last day, 11:59 PM (5 Oct - 11 Oct by 11 Oct, 11:59 PM)
- * - their manager or lead can still enter or correct it during the week after (until 18 Oct, 11:59 PM)
+ * - everybody enters their own week by the day after its last day, 11:59 PM (5 Oct - 11 Oct by Monday 12 Oct, 11:59 PM)
+ * - their manager or lead can still enter or correct it for a week after that (until 19 Oct, 11:59 PM)
  * - after that only an administrator can
  * The week is the person's own week (Monday to Sunday, or Sunday to Saturday when they set that).
  * It applies to new entries, changes and deletes, from every place time is entered (Log Time, Calendar Entry,
@@ -26,6 +26,8 @@ final class WeeklyCutoffService
 {
     /** how long the manager has after the person's own cut-off */
     public const MANAGER_DAYS = 7;
+    /** the person's own cut-off is this many days after the last day of the week: the Monday after, 11:59 PM */
+    public const GRACE_DAYS = 1;
 
     public const SELF = 'self';
     public const MANAGER = 'manager';
@@ -59,8 +61,10 @@ final class WeeklyCutoffService
             return null;
         }
         [, $end] = $this->getWeek($owner, $day);
+        // return $actor->getId() === $owner->getId() ? $end : $end->modify('+' . self::MANAGER_DAYS . ' days');
+        $own = $end->modify('+' . self::GRACE_DAYS . ' days');
 
-        return $actor->getId() === $owner->getId() ? $end : $end->modify('+' . self::MANAGER_DAYS . ' days');
+        return $actor->getId() === $owner->getId() ? $own : $own->modify('+' . self::MANAGER_DAYS . ' days');
     }
 
     /**
@@ -102,12 +106,16 @@ final class WeeklyCutoffService
         [$start, $end] = $this->getWeek($owner, $day);
         $week = $start->format('d-M-y') . ' to ' . $end->format('d-M-y');
 
+        $own = $end->modify('+' . self::GRACE_DAYS . ' days');
         if ($problem === self::SELF) {
-            return 'Cut-off date exceeded: the timesheet for ' . $week . ' had to be entered by ' . $end->format('d-M-y') . ', 11:59 PM. '
-                . 'You should enter each week\'s timesheet by the last day of that week. Please contact your manager.';
+            // return 'Cut-off date exceeded: the timesheet for ' . $week . ' had to be entered by ' . $end->format('d-M-y') . ', 11:59 PM. '
+            //     . 'You should enter each week\'s timesheet by the last day of that week. Please contact your manager.';
+            return 'Cut-off date exceeded: the timesheet for ' . $week . ' had to be entered by ' . $own->format('D d-M-y') . ', 11:59 PM. '
+                . 'You should enter each week\'s timesheet by the Monday after it (11:59 PM). Please contact your manager.';
         }
 
-        $deadline = $end->modify('+' . self::MANAGER_DAYS . ' days');
+        // $deadline = $end->modify('+' . self::MANAGER_DAYS . ' days');
+        $deadline = $own->modify('+' . self::MANAGER_DAYS . ' days');
 
         return 'Cut-off date exceeded: you cannot enter ' . $owner->getDisplayName() . '\'s records for ' . $week
             . ' any more (managers can until ' . $deadline->format('d-M-y') . ', 11:59 PM). Please contact the admin.';
@@ -122,13 +130,29 @@ final class WeeklyCutoffService
     {
         $now ??= new \DateTimeImmutable('now');
         [$thisWeek] = $this->getWeek($actor, $now);
+        // the first day of the oldest week whose deadline has not passed yet
+        $openFrom = function (int $extraDays) use ($thisWeek, $now): string {
+            $week = $thisWeek;
+            for ($i = 0; $i < 4; $i++) {
+                $previous = $week->modify('-7 days');
+                $deadline = $previous->modify('+6 days')->setTime(23, 59, 59)->modify('+' . (self::GRACE_DAYS + $extraDays) . ' days');
+                if ($now > $deadline) {
+                    break;
+                }
+                $week = $previous;
+            }
+
+            return $week->format('Y-m-d');
+        };
 
         return [
             'admin' => $this->isAdmin($actor),
-            // own time: this week only
-            'self_from' => $thisWeek->format('Y-m-d'),
-            // the people below: last week as well (its cut-off for managers is the end of this week)
-            'team_from' => $thisWeek->modify('-' . self::MANAGER_DAYS . ' days')->format('Y-m-d'),
+            // own time: this week, and last week until the Monday after it (11:59 PM)
+            // 'self_from' => $thisWeek->format('Y-m-d'),
+            'self_from' => $openFrom(0),
+            // the people below: a week longer
+            // 'team_from' => $thisWeek->modify('-' . self::MANAGER_DAYS . ' days')->format('Y-m-d'),
+            'team_from' => $openFrom(self::MANAGER_DAYS),
             'manager_days' => self::MANAGER_DAYS,
         ];
     }

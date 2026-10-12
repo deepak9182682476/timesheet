@@ -1,7 +1,8 @@
 {% extends 'base.html.twig' %}
 
-{# Additional hours: the day, why, how many hours and what was done. Before it is sent, the page checks that time
-   was logged that day and offers to log it (see AdditionalHoursController::checkTime). #}
+{# Additional hours: the day (with the calendar of Leave & Comp-off), a quarter, half or full day, and what was done.
+   "Worked on" follows from the day. Before it is sent, the page checks that the day was not claimed already and that
+   time was logged that day (see AdditionalHoursController::checkTime). #}
 {% block main %}
     {% set formOptions = {
         'title': 'Claim Extra Hours',
@@ -20,12 +21,30 @@
                 </div>
             </div>
             {{ form_row(form.workDate) }}
-            {{ form_row(form.reason) }}
-            {{ form_row(form.hours) }}
             <div class="mb-3 row">
+                <div class="col-sm-2"></div>
+                <div class="col-sm-10">
+                    <div class="leave-legend text-secondary">
+                        <span><span class="swatch" style="background-color: rgba(214, 57, 57, .3)"></span>Weekend</span>
+                        <span><span class="swatch" style="background-color: rgba(47, 179, 68, .45)"></span>Holiday</span>
+                        <span><span class="swatch" style="background-color: rgba(245, 159, 0, .5)"></span>Optional holiday</span>
+                    </div>
+                </div>
+            </div>
+            {# "Worked on" is worked out from the day; From, To and the hours are replaced by a quarter, half or full day #}
+            {# {{ form_row(form.reason) }} #}
+            {# {{ form_row(form.fromTime) }} #}
+            {# {{ form_row(form.toTime) }} #}
+            {# {{ form_row(form.hours) }} #}
+            <div class="mb-3 row">
+                <div class="col-sm-2 col-form-label">Worked on</div>
+                <div class="col-sm-10 pt-2"><span class="badge bg-secondary-lt" id="additional-hours-reason">Pick the date</span></div>
+            </div>
+            {{ form_row(form.portion) }}
+            {# <div class="mb-3 row">
                 <div class="col-sm-2 col-form-label">Comp-off worth</div>
                 <div class="col-sm-10 pt-2"><span class="badge bg-secondary-lt" id="additional-hours-credit">Enter the hours</span></div>
-            </div>
+            </div> #}
             {{ form_row(form.description) }}
             {{ form_rest(form) }}
         {% endblock %}
@@ -52,24 +71,54 @@
         </div>
     </div>
 
+    {# shown when the same or overlapping time was already claimed #}
+    <div class="modal modal-blur fade" id="additional-hours-overlap-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Already Claimed</h5>
+                    <button type="button" class="btn-close additional-hours-overlap-close" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="additional-hours-overlap-text" class="mb-2"></p>
+                    <div class="text-secondary small">Pick another date. To change how much you claimed for that day, cancel that claim under My Extra Hours Claims and claim again.</div>
+                </div>
+                <div class="modal-footer">
+                    <a href="{{ path('additional_hours') }}" class="btn btn-link link-secondary me-auto">View My Claims</a>
+                    <button type="button" class="btn btn-primary additional-hours-overlap-close">OK, Change Date</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* the calendar of the date field, as in Leave & Comp-off: weekends light red, holidays light green, optional holidays light amber, with the festival's name */
+        .litepicker .container__days .day-item.leave-weekend { background-color: rgba(214, 57, 57, .16); color: var(--tblr-danger, #d63939); }
+        .litepicker .container__days .day-item.leave-festival { position: relative; line-height: 1.1; padding-top: .2rem; }
+        .litepicker .container__days .day-item.leave-holiday { background-color: rgba(47, 179, 68, .28); }
+        .litepicker .container__days .day-item.leave-optional { background-color: rgba(245, 159, 0, .32); }
+        .litepicker .container__days .day-item.is-locked { opacity: .45; }
+        .litepicker .container__days .day-item.is-start-date { background-color: var(--tblr-primary); color: #fff; }
+        .litepicker .container__days .day-item .leave-festival-name { display: block; font-size: .55rem; line-height: 1.05; font-weight: 600; white-space: normal; overflow: hidden; max-height: 1.2rem; word-break: break-word; }
+        .litepicker .container__days > div, .litepicker .container__days > a { min-height: 2.7rem; }
+        .leave-legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .8125rem; }
+        .leave-legend .swatch { display: inline-block; width: .9rem; height: .9rem; border-radius: 3px; vertical-align: -2px; margin-right: .35rem; }
+    </style>
+
     <script type="text/javascript">
         (function () {
-            var dayHours = {{ day_hours }};
-            var input = document.querySelector('.additional-hours-input');
-            var badge = document.getElementById('additional-hours-credit');
-            function credit() {
-                var hours = parseFloat(input.value);
-                var quarters = isNaN(hours) ? 0 : Math.min(4, Math.floor((hours + 0.0001) / (dayHours / 4)));
-                var labels = ['Less than a quarter day', 'Quarter day', 'Half day', 'Three quarters of a day', 'Full day'];
-                badge.textContent = isNaN(hours) ? 'Enter the hours' : labels[quarters] + (quarters > 0 ? ' (' + (quarters / 4) + ' day)' : '');
-                badge.className = 'badge ' + (quarters > 0 ? 'bg-green-lt' : 'bg-secondary-lt');
-            }
-            if (input !== null) { input.addEventListener('input', credit); credit(); }
+            var validDays = {{ constant('App\\Entity\\AdditionalHours::CREDIT_VALID_DAYS') }};
+            var festivals = {{ festivals|json_encode|raw }};
+            var office = {{ office|json_encode|raw }};
+            var reasons = {{ reasons|json_encode|raw }};
+            // the days already claimed (not rejected); a day cannot be claimed twice
+            var claimed = {{ claimed|json_encode|raw }};
 
-            // before sending: is time logged on that day?
-            var form = input !== null ? input.form : null;
-            var modal = document.getElementById('additional-hours-time-modal');
-            var confirmed = false;
+            var dateField = document.querySelector('input[id$="_workDate"]');
+            var form = dateField !== null ? dateField.form : null;
+            if (form === null) { return; }
+            var reasonBadge = document.getElementById('additional-hours-reason');
+
             function readDate(field) {
                 var format = field.dataset.format || 'YYYY-MM-DD';
                 var names = format.match(/[A-Za-z]+/g) || [];
@@ -80,69 +129,167 @@
                 if (!parts.Y || !parts.M || !parts.D) { return null; }
                 return parts.Y + '-' + (parts.M < 10 ? '0' : '') + parts.M + '-' + (parts.D < 10 ? '0' : '') + parts.D;
             }
-            function show() { modal.style.display = 'block'; modal.classList.add('show'); var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'additional-hours-backdrop'; document.body.appendChild(b); }
-            function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('additional-hours-backdrop'); if (b) { b.remove(); } }
-            modal.querySelectorAll('.additional-hours-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
-            document.getElementById('additional-hours-submit-anyway').addEventListener('click', function () { confirmed = true; hide(); form.requestSubmit ? form.requestSubmit() : form.submit(); });
-            document.getElementById('additional-hours-log').addEventListener('click', function () { hide(); });
+
+            /*
+             * A festival day for the person: 'H' holiday, 'O' optional holiday, null a working day. With an office it is
+             * that office's column; without one, a holiday at every office is 'H' and any other festival day 'O'.
+             */
+            function festivalKind(festival) {
+                if (office) {
+                    var code = festival.codes[office];
+                    return code === 'H' || code === 'O' ? code : null;
+                }
+                var everywhere = Object.keys(festival.codes).every(function (place) { return festival.codes[place] === 'H'; });
+                var any = Object.keys(festival.codes).some(function (place) { return festival.codes[place] === 'H' || festival.codes[place] === 'O'; });
+                return everywhere ? 'H' : (any ? 'O' : null);
+            }
+
+            // "Worked on", from the day (the same rule as the server): weekend, festival / holiday, or night shift
+            function reasonFor(day) {
+                var weekday = new Date(day + 'T00:00:00').getDay();
+                if (weekday === 0 || weekday === 6) { return {key: 'weekend', text: reasons.weekend + ' (' + (weekday === 0 ? 'Sunday' : 'Saturday') + ')'}; }
+                var festival = festivals[day];
+                if (festival && festivalKind(festival) !== null) { return {key: 'holiday', text: reasons.holiday + ': ' + festival.name}; }
+                return {key: 'night_shift', text: reasons.night_shift};
+            }
+            function showReason() {
+                var day = readDate(dateField);
+                if (day === null) { reasonBadge.textContent = 'Pick the date'; reasonBadge.className = 'badge bg-secondary-lt'; return; }
+                var reason = reasonFor(day);
+                reasonBadge.textContent = reason.text;
+                reasonBadge.className = 'badge ' + (reason.key === 'weekend' ? 'bg-red-lt' : (reason.key === 'holiday' ? 'bg-green-lt' : 'bg-blue-lt'));
+            }
+
             // the date is checked as soon as it is picked, not only after "Submit for Approval"
-            var dateField = form !== null ? form.querySelector('input[id$="_workDate"]') : null;
-            var dateRow = dateField !== null ? dateField.closest('.row') : null;
+            var dateRow = dateField.closest('.row');
             var dateError = document.createElement('div');
             dateError.className = 'invalid-feedback d-block';
-            if (dateField !== null) { (dateField.closest('.input-group') || dateField).insertAdjacentElement('afterend', dateError); }
-            var lastChecked = null;
+            (dateField.closest('.input-group') || dateField).insertAdjacentElement('afterend', dateError);
+            function claimedProblem(day) {
+                var start = new Date(day + 'T00:00:00').getTime(), end = start + 86400000;
+                for (var i = 0; i < claimed.length; i++) {
+                    var otherStart = new Date(claimed[i].from + ':00').getTime(), otherEnd = new Date(claimed[i].to + ':00').getTime();
+                    if (start < otherEnd && otherStart < end) { return claimed[i].message; }
+                }
+                return '';
+            }
             function dateProblem() {
                 var day = readDate(dateField);
                 if (day === null) { return ''; }
                 var picked = new Date(day + 'T00:00:00');
                 var today = new Date(); today.setHours(0, 0, 0, 0);
-                var oldest = new Date(today.getTime()); oldest.setDate(oldest.getDate() - {{ constant('App\\Entity\\AdditionalHours::CREDIT_VALID_DAYS') }});
+                var oldest = new Date(today.getTime()); oldest.setDate(oldest.getDate() - validDays);
                 if (picked > today) { return 'The day cannot be in the future.'; }
-                if (picked < oldest) { return 'Extra hours can be claimed up to {{ constant('App\\Entity\\AdditionalHours::CREDIT_VALID_DAYS') }} days back.'; }
-                var reason = form.querySelector('input[type="radio"][id*="_reason"]:checked');
-                if (reason !== null && reason.value === 'weekend' && picked.getDay() !== 0 && picked.getDay() !== 6) { return 'This day is not a Saturday or Sunday.'; }
-                return '';
+                if (picked < oldest) { return 'Extra hours can be claimed up to ' + validDays + ' days back.'; }
+                return claimedProblem(day);
             }
+            var lastChecked = null;
             function checkDate() {
-                if (dateField === null) { return true; }
-                var key = dateField.value + '|' + ((form.querySelector('input[type="radio"][id*="_reason"]:checked') || {}).value || '');
                 var problem = dateProblem();
-                if (key !== lastChecked) {
-                    lastChecked = key;
-                    // the message from the last "Submit" no longer applies once the date or reason changes
+                if (dateField.value !== lastChecked) {
+                    lastChecked = dateField.value;
+                    // the message from the last "Submit" no longer applies once the date changes
                     dateRow.querySelectorAll('.invalid-feedback').forEach(function (el) { if (el !== dateError) { el.classList.add('d-none'); } });
+                    showReason();
                 }
                 dateError.textContent = problem;
                 dateField.classList.toggle('is-invalid', problem !== '');
                 return problem === '';
             }
-            if (dateField !== null) {
-                ['change', 'input', 'blur'].forEach(function (name) { dateField.addEventListener(name, checkDate); });
-                form.querySelectorAll('input[type="radio"][id*="_reason"]').forEach(function (el) { el.addEventListener('change', checkDate); });
-                // the date picker fills the field without always firing an event
-                window.setInterval(checkDate, 700);
-            }
+            ['change', 'input', 'blur'].forEach(function (name) { dateField.addEventListener(name, checkDate); });
+            // the date picker fills the field without always firing an event
+            window.setInterval(checkDate, 700);
+            checkDate();
 
-            if (form !== null) {
-                form.addEventListener('submit', function (event) {
-                    if (!checkDate()) { event.preventDefault(); event.stopImmediatePropagation(); dateField.focus(); return; }
-                    if (confirmed) { return; }
-                    var day = readDate(form.querySelector('input[id$="_workDate"]'));
-                    if (day === null) { return; }
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                    fetch('{{ path('additional_hours_check_time') }}?date=' + day, {credentials: 'same-origin'})
-                        .then(function (response) { return response.json(); })
-                        .then(function (result) {
-                            if (result.logged) { confirmed = true; form.requestSubmit ? form.requestSubmit() : form.submit(); return; }
-                            document.getElementById('additional-hours-day').textContent = result.label;
-                            document.getElementById('additional-hours-log').href = result.create;
-                            show();
-                        })
-                        .catch(function () { confirmed = true; form.submit(); });
-                }, true);
+            /*
+             * The pop-up calendar of the date field, as in Leave & Comp-off: weekends light red, festival days light
+             * green (holiday) or amber (optional holiday) with the festival's name. Future days and days more than
+             * validDays back cannot be picked.
+             */
+            var decorated = false;
+            function decorateCalendar() {
+                if (decorated || typeof kimai === 'undefined' || typeof kimai.getPlugins !== 'function') { return; }
+                var pickers = [];
+                kimai.getPlugins().forEach(function (plugin) { if (Array.isArray(plugin._pickers)) { pickers = pickers.concat(plugin._pickers); } });
+                pickers.forEach(function (entry) {
+                    if (!Array.isArray(entry) || entry[0] !== dateField || entry[1]._extraDecorated) { return; }
+                    var picker = entry[1];
+                    picker._extraDecorated = true;
+                    decorated = true;
+                    picker.on('render:day', function (cell, date) {
+                        var weekday = date.getDay();
+                        if (weekday === 0 || weekday === 6) { cell.classList.add('leave-weekend'); }
+                        var festival = festivals[date.format('YYYY-MM-DD')];
+                        var kind = festival ? festivalKind(festival) : null;
+                        if (kind !== null) {
+                            cell.classList.add('leave-festival', kind === 'H' ? 'leave-holiday' : 'leave-optional');
+                            cell.title = festival.name + (kind === 'H' ? ' (holiday)' : ' (optional holiday)');
+                            var label = document.createElement('span');
+                            label.className = 'leave-festival-name';
+                            label.textContent = festival.name;
+                            cell.appendChild(label);
+                        }
+                    });
+                    picker.setOptions({
+                        lockDaysFilter: function (date) {
+                            var day = new Date(date.getTime()); day.setHours(0, 0, 0, 0);
+                            var today = new Date(); today.setHours(0, 0, 0, 0);
+                            var oldest = new Date(today.getTime()); oldest.setDate(oldest.getDate() - validDays);
+                            return day > today || day < oldest;
+                        }
+                    });
+                });
             }
+            document.addEventListener('kimai.initialized', decorateCalendar);
+            var decorateTimer = window.setInterval(function () { decorateCalendar(); if (decorated) { window.clearInterval(decorateTimer); } }, 300);
+
+            // the popup for a day already claimed
+            var overlapModal = document.getElementById('additional-hours-overlap-modal');
+            function showOverlap(message) {
+                document.getElementById('additional-hours-overlap-text').textContent = message;
+                overlapModal.style.display = 'block'; overlapModal.classList.add('show');
+                if (!document.getElementById('additional-hours-overlap-backdrop')) { var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'additional-hours-overlap-backdrop'; document.body.appendChild(b); }
+            }
+            function hideOverlap() {
+                overlapModal.style.display = 'none'; overlapModal.classList.remove('show');
+                var b = document.getElementById('additional-hours-overlap-backdrop'); if (b) { b.remove(); }
+                dateField.focus();
+            }
+            overlapModal.querySelectorAll('.additional-hours-overlap-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hideOverlap(); }); });
+            {# the server found the day already claimed #}
+            {% for error in form.workDate.vars.errors %}
+                {% if loop.first and 'already claimed' in error.message %}
+            showOverlap({{ error.message|json_encode|raw }});
+                {% endif %}
+            {% endfor %}
+
+            // before sending: is time logged on that day?
+            var modal = document.getElementById('additional-hours-time-modal');
+            var confirmed = false;
+            function show() { modal.style.display = 'block'; modal.classList.add('show'); var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'additional-hours-backdrop'; document.body.appendChild(b); }
+            function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('additional-hours-backdrop'); if (b) { b.remove(); } }
+            modal.querySelectorAll('.additional-hours-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
+            document.getElementById('additional-hours-submit-anyway').addEventListener('click', function () { confirmed = true; hide(); form.requestSubmit ? form.requestSubmit() : form.submit(); });
+            document.getElementById('additional-hours-log').addEventListener('click', function () { hide(); });
+
+            form.addEventListener('submit', function (event) {
+                var day = readDate(dateField);
+                var already = day !== null ? claimedProblem(day) : '';
+                if (already !== '') { event.preventDefault(); event.stopImmediatePropagation(); checkDate(); showOverlap(already); return; }
+                if (!checkDate()) { event.preventDefault(); event.stopImmediatePropagation(); dateField.focus(); return; }
+                if (confirmed || day === null) { return; }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                fetch('{{ path('additional_hours_check_time') }}?date=' + day, {credentials: 'same-origin'})
+                    .then(function (response) { return response.json(); })
+                    .then(function (result) {
+                        if (result.logged) { confirmed = true; form.requestSubmit ? form.requestSubmit() : form.submit(); return; }
+                        document.getElementById('additional-hours-day').textContent = result.label;
+                        document.getElementById('additional-hours-log').href = result.create;
+                        show();
+                    })
+                    .catch(function () { confirmed = true; form.submit(); });
+            }, true);
         })();
     </script>
 {% endblock %}

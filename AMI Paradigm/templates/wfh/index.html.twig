@@ -1,0 +1,117 @@
+{% extends 'base.html.twig' %}
+{% import "macros/widgets.html.twig" as widgets %}
+
+{# WFH requests: mine, and those of my people waiting for my decision #}
+
+{% macro status_badge(item) %}
+    {% set colors = {'pending': 'warning', 'approved': 'success', 'rejected': 'danger'} %}
+    {% set labels = {'pending': 'Waiting for approval', 'approved': 'Approved', 'rejected': 'Rejected'} %}
+    <span class="badge bg-{{ colors[item.status] ?? 'secondary' }} text-white">{{ labels[item.status] ?? item.status }}</span>
+    {% if not item.pending and item.decidedBy is not null %}<div class="text-secondary small">by {{ item.decidedBy.displayName }}</div>{% endif %}
+    {% if item.status == 'rejected' and item.decisionComment is not empty %}
+        <div class="small mt-1"><span class="text-secondary">Reason:</span> {{ item.decisionComment|nl2br }}</div>
+    {% endif %}
+{% endmacro %}
+
+{% macro days(item) %}
+    {{ item.startDate|date_format('d-M-y') }}{% if item.multiDay %} to {{ item.endDate|date_format('d-M-y') }}{% endif %}
+    <div class="text-secondary small">
+        {% if item.multiDay %}{{ item.days }} days{% else %}{{ item.startDate|date_format('l') }}{% endif %}
+    </div>
+{% endmacro %}
+
+{% block main %}
+    {% set token = csrf_token('wfh_action') %}
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title">My WFH Requests</h3>
+            <div class="card-actions">
+                <a href="{{ path('wfh_new') }}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Request WFH</a>
+            </div>
+        </div>
+        {% if mine is empty %}
+            <div class="card-body text-secondary">
+                Working from home? Use "Request WFH" to send the day to your supervisor. Once approved, your time entries
+                of that day count as worked even when you were not in the office.
+            </div>
+        {% else %}
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Reason</th>
+                        <th>{{ 'status'|trans }}</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in mine %}
+                        <tr>
+                            <td class="text-nowrap">{{ _self.days(item) }}</td>
+                            <td class="text-secondary">{{ item.reason|default('')|nl2br }}</td>
+                            <td>{{ _self.status_badge(item) }}</td>
+                            <td class="text-nowrap">
+                                {% if cancellable[item.id] ?? false %}
+                                    <form method="post" action="{{ path('wfh_cancel', {'id': item.id}) }}" class="wfh-cancel-form">
+                                        <input type="hidden" name="_token" value="{{ token }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if team is not empty %}
+        <div class="card mb-3" id="team-wfh">
+            <div class="card-header"><h3 class="card-title">Team WFH Requests</h3></div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <thead>
+                    <tr>
+                        <th>Person</th>
+                        <th>Date</th>
+                        <th>Reason</th>
+                        <th>{{ 'status'|trans }}</th>
+                        <th class="w-1"></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for item in team %}
+                        <tr>
+                            <td class="text-nowrap">{{ widgets.user_avatar(item.user, false, 'avatar-rounded avatar-xs me-1') }} {{ item.user.displayName }}</td>
+                            <td class="text-nowrap">{{ _self.days(item) }}</td>
+                            <td class="text-secondary">{{ item.reason|default('')|nl2br }}</td>
+                            <td>{{ _self.status_badge(item) }}</td>
+                            <td class="text-nowrap">
+                                {% if item.pending and (decidable[item.id] ?? false) %}
+                                    <div class="btn-list flex-nowrap justify-content-end">
+                                        <form method="post" action="{{ path('wfh_decide', {'id': item.id, 'decision': 'approve'}) }}">
+                                            <input type="hidden" name="_token" value="{{ token }}">
+                                            <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                        </form>
+                                        <button type="button" class="btn btn-sm btn-outline-danger reject-with-reason" data-action="{{ path('wfh_decide', {'id': item.id, 'decision': 'reject'}) }}" data-summary="Reject the WFH request of {{ item.user.displayName }} for {{ item.startDate|date_format('d-M-y') }}{% if item.multiDay %} to {{ item.endDate|date_format('d-M-y') }}{% endif %}?">Reject</button>
+                                    </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
+    {{ include('partials/reject-with-reason.html.twig', {'token': token, 'title': 'Reject WFH Request'}) }}
+    <script type="text/javascript">
+        document.querySelectorAll('.wfh-cancel-form').forEach(function (form) {
+            form.addEventListener('submit', function (event) { if (!window.confirm('Cancel this WFH request?')) { event.preventDefault(); } });
+        });
+    </script>
+{% endblock %}

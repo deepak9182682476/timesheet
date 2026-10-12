@@ -1,0 +1,81 @@
+{#
+    Calendar Entry: the colour of each day (see CalendarDayColorsController) and its legend:
+    Saturday, Sunday and fixed holidays light blue; work from home light green; comp-off light violet;
+    optional holiday light pink; leave dark orange. Holiday names are written in the day.
+#}
+<style>
+    /* a light border around every day box, coloured or not */
+    .fc .fc-daygrid-day, .fc .fc-timegrid-col, .fc .fc-col-header-cell { border: 1px solid #d6dbe2 !important; }
+    .fc .fc-day.ami-day-weekend, .fc .fc-day.ami-day-holiday { background-color: #dbeafe !important; }
+    .fc .fc-day.ami-day-wfh { background-color: #d3f9d8 !important; }
+    .fc .fc-day.ami-day-compoff { background-color: #e5dbff !important; }
+    .fc .fc-day.ami-day-optional { background-color: #ffdeeb !important; }
+    .fc .fc-day.ami-day-leave { background-color: #ffa94d !important; }
+    .fc .ami-day-label { display: block; font-size: .65rem; font-weight: 600; line-height: 1.15; padding: 0 .35rem .15rem; text-align: right; color: #343a40; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ami-day-legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .8125rem; }
+    .ami-day-legend .swatch { display: inline-block; width: 1rem; height: .9rem; border-radius: 3px; vertical-align: -2px; margin-right: .35rem; border: 1px solid rgba(0, 0, 0, .08); }
+</style>
+<div class="ami-day-legend text-secondary mb-2">
+    <span><span class="swatch" style="background:#dbeafe"></span>Weekend / holiday</span>
+    <span><span class="swatch" style="background:#d3f9d8"></span>Work from home</span>
+    <span><span class="swatch" style="background:#e5dbff"></span>Comp-off</span>
+    <span><span class="swatch" style="background:#ffdeeb"></span>Optional holiday</span>
+    <span><span class="swatch" style="background:#ffa94d"></span>Leave</span>
+</div>
+<script type="text/javascript">
+    window.amiCalendarDayColors = function (fc, userId) {
+        var url = '{{ path('calendar_day_colors') }}';
+        var days = {};
+        function iso(date) { return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + date.getDate()).slice(-2); }
+        /* colours the day cells (month: the day boxes; week / day: the day columns) and writes the holiday names */
+        var root = fc.el || document.getElementById('timesheet_calendar');
+        var painting = false;
+        function apply() {
+            if (!root) { return; }
+            painting = true;
+            root.querySelectorAll('.fc-daygrid-day[data-date], .fc-timegrid-col[data-date]').forEach(function (cell) {
+                var day = days[cell.dataset.date];
+                cell.className = cell.className.replace(/\s*ami-day-\w+/g, '');
+                if (day) { cell.classList.add('ami-day-' + day.kind); }
+                var top = cell.querySelector('.fc-daygrid-day-top');
+                if (top !== null) {
+                    // the name goes on its own line under the day number
+                    var label = top.parentNode.querySelector(':scope > .ami-day-label');
+                    var text = day && day.label ? day.label : '';
+                    if (text === '' && label !== null) { label.remove(); }
+                    if (text !== '') {
+                        if (label === null) { label = document.createElement('div'); label.className = 'ami-day-label'; top.parentNode.insertBefore(label, top.nextSibling); }
+                        label.textContent = text;
+                        label.title = text;
+                    }
+                }
+            });
+            painting = false;
+        }
+        // the calendar redraws its cells now and then: colour them again
+        if (root) {
+            var timer = null;
+            new MutationObserver(function () {
+                if (painting) { return; }
+                window.clearTimeout(timer);
+                timer = window.setTimeout(apply, 60);
+            }).observe(root, {childList: true, subtree: true});
+        }
+        fc.on('datesSet', function (info) {
+            var end = new Date(info.end.getTime()); end.setDate(end.getDate() - 1);
+            fetch(url + '?from=' + iso(info.start) + '&to=' + iso(end) + (userId ? '&user=' + userId : ''), {credentials: 'same-origin'})
+                .then(function (response) { return response.json(); })
+                .then(function (result) { days = result || {}; apply(); })
+                .catch(function () {});
+        });
+        // the first dates were set before this was attached: load them now
+        var view = fc.view;
+        if (view) {
+            var end = new Date(view.activeEnd.getTime()); end.setDate(end.getDate() - 1);
+            fetch(url + '?from=' + iso(view.activeStart) + '&to=' + iso(end) + (userId ? '&user=' + userId : ''), {credentials: 'same-origin'})
+                .then(function (response) { return response.json(); })
+                .then(function (result) { days = result || {}; apply(); })
+                .catch(function () {});
+        }
+    };
+</script>

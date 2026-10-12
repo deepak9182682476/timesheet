@@ -28,6 +28,7 @@ final class TeamEventExtension extends AbstractExtension
         private readonly \App\TeamEvent\AdditionalHoursService $additionalHours,
         private readonly \App\Timesheet\WeeklyCutoffService $weeklyCutoff,
         private readonly \App\WorkModel\WorkModelService $workModels,
+        private readonly \App\TeamEvent\WfhService $wfh,
     )
     {
     }
@@ -177,7 +178,8 @@ final class TeamEventExtension extends AbstractExtension
     public function additionalHoursNotifications(): array
     {
         $user = $this->security->getUser();
-        $empty = ['pending' => [], 'hours' => [], 'leave' => []];
+        // $empty = ['pending' => [], 'hours' => [], 'leave' => []];
+        $empty = ['pending' => [], 'hours' => [], 'leave' => [], 'wfh_pending' => [], 'wfh' => []];
         if (!($user instanceof User)) {
             return $empty;
         }
@@ -187,6 +189,9 @@ final class TeamEventExtension extends AbstractExtension
                 'pending' => $this->additionalHours->getTeamRequests($user, true),
                 'hours' => $this->additionalHours->getDecisionNotifications($user),
                 'leave' => $this->events->getDecisionNotifications($user),
+                // WFH requests waiting for this person's decision, and the person's own ones just decided
+                'wfh_pending' => $this->wfh->getTeamRequests($user, true),
+                'wfh' => $this->wfh->getDecisionNotifications($user),
             ];
         } catch (\Throwable) {
             return $empty;

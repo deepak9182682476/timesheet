@@ -46,6 +46,13 @@ class AdditionalHours
     #[ORM\Column(name: 'work_date', type: Types::DATE_MUTABLE, nullable: false)]
     private ?\DateTime $workDate = null;
 
+    /** when the extra work started and ended; a "to" at or before the "from" is on the next day (a night shift) */
+    #[ORM\Column(name: 'from_time', type: Types::TIME_MUTABLE, nullable: true)]
+    private ?\DateTime $fromTime = null;
+
+    #[ORM\Column(name: 'to_time', type: Types::TIME_MUTABLE, nullable: true)]
+    private ?\DateTime $toTime = null;
+
     /** see REASONS */
     #[ORM\Column(name: 'reason', type: Types::STRING, length: 20, nullable: false)]
     private ?string $reason = null;
@@ -127,6 +134,77 @@ class AdditionalHours
     public function setWorkDate(?\DateTime $workDate): void
     {
         $this->workDate = $workDate;
+    }
+
+    public function getFromTime(): ?\DateTime
+    {
+        return $this->fromTime;
+    }
+
+    public function setFromTime(?\DateTime $fromTime): void
+    {
+        $this->fromTime = $fromTime;
+    }
+
+    public function getToTime(): ?\DateTime
+    {
+        return $this->toTime;
+    }
+
+    public function setToTime(?\DateTime $toTime): void
+    {
+        $this->toTime = $toTime;
+    }
+
+    public function hasTimes(): bool
+    {
+        return $this->fromTime !== null && $this->toTime !== null;
+    }
+
+    /**
+     * The time the claim covers: from the "from" to the "to" time of the day worked (the "to" on the next day when
+     * it is at or before the "from"). Older claims without times cover the whole day.
+     *
+     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable}|null
+     */
+    public function getPeriod(): ?array
+    {
+        if ($this->workDate === null) {
+            return null;
+        }
+        $day = \DateTimeImmutable::createFromFormat('!Y-m-d', $this->workDate->format('Y-m-d'));
+        if (!$this->hasTimes()) {
+            return [$day, $day->modify('+1 day')];
+        }
+        $from = $day->setTime((int) $this->fromTime->format('H'), (int) $this->fromTime->format('i'));
+        $to = $day->setTime((int) $this->toTime->format('H'), (int) $this->toTime->format('i'));
+        if ($to <= $from) {
+            $to = $to->modify('+1 day');
+        }
+
+        return [$from, $to];
+    }
+
+    /** the hours between "from" and "to" */
+    public function getTimeSpan(): ?float
+    {
+        if (!$this->hasTimes()) {
+            return null;
+        }
+        [$from, $to] = $this->getPeriod();
+
+        return ($to->getTimestamp() - $from->getTimestamp()) / 3600;
+    }
+
+    /** for example "10:00 - 15:00" or "22:00 - 06:00 (next day)"; empty for older claims without times */
+    public function getTimeLabel(): string
+    {
+        if (!$this->hasTimes()) {
+            return '';
+        }
+        [$from, $to] = $this->getPeriod();
+
+        return $from->format('H:i') . ' – ' . $to->format('H:i') . ($to->format('Y-m-d') !== $from->format('Y-m-d') && $to->format('H:i') !== '00:00' ? ' (next day)' : '');
     }
 
     public function getReason(): ?string

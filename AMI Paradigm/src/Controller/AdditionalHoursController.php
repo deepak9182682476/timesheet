@@ -82,7 +82,13 @@ final class AdditionalHoursController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $hours->setHours((float) $hours->getHours());
+            // $hours->setHours((float) $hours->getHours());
+            // the hours are worked out from "From" and "To", whatever was sent
+            // $hours->setHours((float) $hours->getTimeSpan());
+            // a quarter, half or full day of DAY_HOURS hours; "Worked on" follows from the day
+            $days = AdditionalHoursForm::PORTIONS[(string) $form->get('portion')->getData()] ?? 0.0;
+            $hours->setHours($days * AdditionalHours::DAY_HOURS);
+            $hours->setReason($hours->getWorkDate() !== null ? $this->reasonFor($user, $hours->getWorkDate()->format('Y-m-d')) : null);
             $this->validate($form, $hours, $user);
             if ($form->isValid()) {
                 try {
@@ -100,6 +106,11 @@ final class AdditionalHoursController extends AbstractController
             'page_setup' => new PageSetup('Extra Hours Claim'),
             'form' => $form->createView(),
             'day_hours' => AdditionalHours::DAY_HOURS,
+            'claimed' => $this->getClaimedPeriods($user),
+            // for the calendar of the date field, coloured as in Leave & Comp-off
+            'festivals' => $this->calendar->getDaysByLocation(),
+            'office' => HolidayCalendar::getUserLocation($user),
+            'reasons' => AdditionalHours::REASONS,
         ]);
     }
 
@@ -171,25 +182,122 @@ final class AdditionalHoursController extends AbstractController
             $form->get('workDate')->addError(new FormError('The day cannot be in the future.'));
         } elseif ($day < $today->modify('-' . AdditionalHours::CREDIT_VALID_DAYS . ' days')->format('Y-m-d')) {
             $form->get('workDate')->addError(new FormError('Extra hours can be claimed up to ' . AdditionalHours::CREDIT_VALID_DAYS . ' days back.'));
-        } elseif ($hours->getReason() === 'weekend' && (int) $date->format('N') < 6) {
+        // "Worked on" is now worked out from the day (reasonFor), so these can no longer be wrong
+        /* } elseif ($hours->getReason() === 'weekend' && (int) $date->format('N') < 6) {
             $form->get('workDate')->addError(new FormError($date->format('d-M-y (l)') . ' is not a weekend day.'));
         } elseif ($hours->getReason() === 'holiday' && !$this->isHoliday($user, $day)) {
-            $form->get('workDate')->addError(new FormError($date->format('d-M-y') . ' is not a festival or holiday in the holiday calendar' . (HolidayCalendar::getUserLocation($user) !== null ? ' of your office' : '') . '.'));
+            $form->get('workDate')->addError(new FormError($date->format('d-M-y') . ' is not a festival or holiday in the holiday calendar' . (HolidayCalendar::getUserLocation($user) !== null ? ' of your office' : '') . '.')); */
         }
 
-        $value = (float) $hours->getHours();
-        if ($value <= 0 || $value > 24 || fmod($value * 4, 1.0) !== 0.0) {
-            $form->get('hours')->addError(new FormError('Enter the hours between 0.25 and 24, in steps of 0.25.'));
-        } elseif ($hours->getCreditDays() <= 0) {
-            $form->get('hours')->addError(new FormError('At least ' . (AdditionalHours::DAY_HOURS / 4) . ' hours make a quarter day.'));
-        }
+        /* From and To are no longer asked
+        $from = $hours->getFromTime();
+        $to = $hours->getToTime();
+        if ($from !== null && $to !== null) {
+            if ((int) $from->format('i') % 15 !== 0 || (int) $to->format('i') % 15 !== 0) {
+                $form->get('toTime')->addError(new FormError('Enter the times in steps of 15 minutes (for example 10:00, 10:15, 10:30).'));
 
-        foreach ($this->service->getMine($user) as $earlier) {
-            if ($earlier->getStatus() !== AdditionalHours::STATUS_REJECTED && $earlier->getWorkDate()?->format('Y-m-d') === $day) {
-                $form->get('workDate')->addError(new FormError('You already claimed extra hours for ' . $date->format('d-M-y') . '.'));
-                break;
+                return;
+            }
+            if ($from->format('H:i') === $to->format('H:i')) {
+                $form->get('toTime')->addError(new FormError('"To" cannot be the same as "From".'));
+
+                return;
             }
         }
+        */
+
+        $value = (float) $hours->getHours();
+        // if ($value <= 0 || $value > 24 || fmod($value * 4, 1.0) !== 0.0) {
+        //     $form->get('hours')->addError(new FormError('Enter the hours between 0.25 and 24, in steps of 0.25.'));
+        // } elseif ($hours->getCreditDays() <= 0) {
+        //     $form->get('hours')->addError(new FormError('At least ' . (AdditionalHours::DAY_HOURS / 4) . ' hours make a quarter day.'));
+        // }
+        if ($value <= 0 || $hours->getCreditDays() <= 0) {
+            $form->get('portion')->addError(new FormError('Choose a quarter, half or full day.'));
+        }
+
+        // one claim per day; replaced by the check of the time below, so that two different times of one day can be claimed
+        // foreach ($this->service->getMine($user) as $earlier) {
+        //     if ($earlier->getStatus() !== AdditionalHours::STATUS_REJECTED && $earlier->getWorkDate()?->format('Y-m-d') === $day) {
+        //         $form->get('workDate')->addError(new FormError('You already claimed extra hours for ' . $date->format('d-M-y') . '.'));
+        //         break;
+        //     }
+        // }
+
+        // the same or overlapping time cannot be claimed twice (rejected claims do not count)
+        $overlap = $this->findOverlap($user, $hours);
+        if ($overlap !== null) {
+            // $form->get('fromTime')->addError(new FormError($this->overlapMessage($overlap)));
+            $form->get('workDate')->addError(new FormError($this->overlapMessage($overlap)));
+        }
+    }
+
+    /**
+     * The person's other claim (not rejected) whose time overlaps this one; touching ends (10:00 - 12:00 and
+     * 12:00 - 14:00) do not overlap.
+     */
+    private function findOverlap(User $user, AdditionalHours $hours): ?AdditionalHours
+    {
+        $period = $hours->getPeriod();
+        if ($period === null) {
+            return null;
+        }
+        foreach ($this->service->getMine($user) as $earlier) {
+            if ($earlier === $hours || ($hours->getId() !== null && $earlier->getId() === $hours->getId()) || $earlier->getStatus() === AdditionalHours::STATUS_REJECTED) {
+                continue;
+            }
+            $other = $earlier->getPeriod();
+            if ($other !== null && $period[0] < $other[1] && $other[0] < $period[1]) {
+                return $earlier;
+            }
+        }
+
+        return null;
+    }
+
+    private function overlapMessage(AdditionalHours $earlier): string
+    {
+        $status = match ($earlier->getStatus()) {
+            AdditionalHours::STATUS_APPROVED => 'Approved',
+            default => 'Waiting for approval',
+        };
+        if (!$earlier->hasTimes()) {
+            // return 'You already claimed extra hours for the whole of ' . $earlier->getWorkDate()->format('d-M-y') . ' (' . $status . ').';
+            return 'You already claimed extra hours for ' . $earlier->getWorkDate()->format('d-M-y (l)') . ': ' . strtolower($earlier->getCreditLabel()) . ' (' . $status . '). The same day cannot be claimed twice.';
+        }
+
+        return 'These hours overlap your claim of ' . $earlier->getWorkDate()->format('d-M-y') . ', ' . $earlier->getTimeLabel() . ' (' . $status . '). The same time cannot be claimed twice.';
+    }
+
+    /**
+     * The person's claims (not rejected), for the warning in the form before it is sent.
+     *
+     * @return array<int, array{from: string, to: string, message: string}>
+     */
+    private function getClaimedPeriods(User $user): array
+    {
+        $result = [];
+        foreach ($this->service->getMine($user) as $earlier) {
+            if ($earlier->getStatus() === AdditionalHours::STATUS_REJECTED || ($period = $earlier->getPeriod()) === null) {
+                continue;
+            }
+            $result[] = ['from' => $period[0]->format('Y-m-d\\TH:i'), 'to' => $period[1]->format('Y-m-d\\TH:i'), 'message' => $this->overlapMessage($earlier)];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Why the person worked that day, from the day itself: Saturday or Sunday a weekend, a festival day of the holiday
+     * calendar a festival / holiday, any other day a night shift.
+     */
+    private function reasonFor(User $user, string $date): string
+    {
+        if ((int) (new \DateTimeImmutable($date))->format('N') >= 6) {
+            return 'weekend';
+        }
+
+        return $this->isHoliday($user, $date) ? 'holiday' : 'night_shift';
     }
 
     /**

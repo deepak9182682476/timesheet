@@ -1,0 +1,107 @@
+{#
+    Time entries follow the attendance (see AttendanceService::getEntryStates):
+    - not physically present, or the attendance is not entered yet: light cement background
+    - a WFH request for the day waiting for approval: light cement background with a thick border
+    - present, or WFH approved: shown as usual
+    - weekend, fixed holiday or night shift work: light until its Extra Hours Claim is approved (thick border while it waits)
+    Used on Log Time (rows with data-entry-id) and Calendar Entry (window.amiAttendanceShading.calendar).
+#}
+<style>
+    :root { --ami-cement: #e3e1db; --ami-cement-border: #6f6a60; }
+    tr.att-cement > td, tr.att-wfh > td { background-color: var(--ami-cement) !important; }
+    tr.att-wfh > td { border-top: 3px solid var(--ami-cement-border) !important; border-bottom: 3px solid var(--ami-cement-border) !important; }
+    tr.att-wfh > td:first-child { border-left: 3px solid var(--ami-cement-border) !important; }
+    tr.att-wfh > td:last-child { border-right: 3px solid var(--ami-cement-border) !important; }
+    .fc .fc-event.att-cement, .fc .fc-event.att-wfh { background-color: var(--ami-cement) !important; border-color: var(--ami-cement) !important; color: #3d3a35 !important; }
+    .fc .fc-event.att-cement .fc-event-main, .fc .fc-event.att-wfh .fc-event-main { color: #3d3a35 !important; }
+    .fc .fc-event.att-wfh { border: 3px solid var(--ami-cement-border) !important; }
+    .ami-att-legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .8125rem; }
+    .ami-att-legend .swatch { display: inline-block; width: 1rem; height: .9rem; border-radius: 3px; vertical-align: -2px; margin-right: .35rem; background: var(--ami-cement); }
+    .ami-att-legend .swatch.wfh { border: 2px solid var(--ami-cement-border); }
+</style>
+<script type="text/javascript">
+    (function () {
+        if (window.amiAttendanceShading) { return; }
+        var url = '{{ path('attendance_entry_states') }}';
+        var known = {};
+        // var classes = {unmarked: 'att-cement', absent: 'att-cement', wfh_pending: 'att-wfh'};
+        var classes = {unmarked: 'att-cement', absent: 'att-cement', wfh_pending: 'att-wfh', extra_missing: 'att-cement', extra_pending: 'att-wfh'};
+        var titles = {
+            unmarked: 'Attendance not entered yet for this day',
+            absent: 'Not physically present on this day (no approved WFH request)',
+            wfh_pending: 'WFH request for this day is waiting for approval',
+            extra_missing: 'Weekend, holiday or night shift work: raise an Extra Hours Claim for this day',
+            extra_pending: 'The Extra Hours Claim for this day is waiting for approval'
+        };
+
+        function load(ids, done) {
+            var missing = ids.filter(function (id) { return !(id in known); });
+            if (missing.length === 0) { done(false); return; }
+            missing.forEach(function (id) { known[id] = null; });
+            fetch(url + '?ids=' + missing.join(','), {credentials: 'same-origin'})
+                .then(function (response) { return response.json(); })
+                .then(function (states) {
+                    var changed = false;
+                    missing.forEach(function (id) { known[id] = states[id] || ''; if (known[id] !== '') { changed = true; } });
+                    done(changed);
+                })
+                .catch(function () { done(false); });
+        }
+
+        function legend(where) {
+            if (where === null || document.querySelector('.ami-att-legend') !== null) { return; }
+            var box = document.createElement('div');
+            box.className = 'ami-att-legend text-secondary mb-2';
+            // box.innerHTML = '<span><span class="swatch"></span>Attendance not entered / not present</span>'
+            //     + '<span><span class="swatch wfh"></span>WFH waiting for approval</span>';
+            box.innerHTML = '<span><span class="swatch"></span>Attendance not entered / not present, or extra hours not claimed</span>'
+                + '<span><span class="swatch wfh"></span>WFH or Extra Hours Claim waiting for approval</span>';
+            where.insertAdjacentElement('beforebegin', box);
+        }
+
+        /* Log Time and the other lists of time entries */
+        function shadeRows() {
+            var rows = Array.prototype.slice.call(document.querySelectorAll('tr[data-entry-id]'));
+            if (rows.length === 0) { return; }
+            var ids = rows.map(function (tr) { return tr.dataset.entryId; });
+            load(ids, function () {
+                var any = false;
+                rows.forEach(function (tr) {
+                    var state = known[tr.dataset.entryId] || '';
+                    tr.classList.remove('att-cement', 'att-wfh');
+                    if (classes[state]) { tr.classList.add(classes[state]); tr.title = titles[state]; any = true; }
+                });
+                if (any) { legend(rows[0].closest('.card') || rows[0].closest('table')); }
+            });
+        }
+
+        window.amiAttendanceShading = {
+            /* Calendar Entry: the entries get their class; the calendar is redrawn once the states are known */
+            calendar: function (fc) {
+                function classNames(arg) {
+                    var id = arg.event.extendedProps ? arg.event.extendedProps.timesheet : null;
+                    var state = id ? (known[id] || '') : '';
+                    return classes[state] ? [classes[state]] : [];
+                }
+                fc.setOption('eventClassNames', classNames);
+                fc.on('eventsSet', function (events) {
+                    var ids = events.map(function (event) { return event.extendedProps ? event.extendedProps.timesheet : null; })
+                        .filter(function (id) { return id !== null && id !== undefined; }).map(String);
+                    load(ids, function (changed) {
+                        if (changed) {
+                            fc.setOption('eventClassNames', function (arg) { return classNames(arg); });
+                            legend(document.getElementById('timesheet_calendar'));
+                        }
+                    });
+                });
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            shadeRows();
+            // the list is reloaded after a change or a filter: shade it again
+            new MutationObserver(function () { window.clearTimeout(window.amiAttShadeTimer); window.amiAttShadeTimer = window.setTimeout(shadeRows, 150); })
+                .observe(document.body, {childList: true, subtree: true});
+        });
+    })();
+</script>

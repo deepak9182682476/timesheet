@@ -37,6 +37,10 @@
                         <span id="leave-balance-box" class="badge bg-primary-lt" style="font-size: .875rem; padding: .5rem .75rem;">
                             <span id="leave-balance-label">Leave balance:</span> <span id="leave-balance-value">{{ balance }}</span>
                         </span>
+                        {# always shown next to the leave balance: the comp-off days that can still be taken #}
+                        <span id="comp-off-balance-box" class="badge bg-purple-lt" style="font-size: .875rem; padding: .5rem .75rem;">
+                            Comp-off available: <span id="comp-off-balance-value"></span>
+                        </span>
                         <span id="leave-day-note" class="text-danger"></span>
                         <span id="leave-day-info" class="text-secondary small"></span>
                     </div>
@@ -46,6 +50,50 @@
             {{ form_rest(form) }}
         {% endblock %}
     {% endembed %}
+
+    {# "Work from home" on days asked for already: a popup, and the request is not sent #}
+    <div class="modal modal-blur fade" id="wfh-taken-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Already Requested</h5>
+                    <button type="button" class="btn-close wfh-taken-close" aria-label="Close"></button>
+                </div>
+                <div class="modal-body"><p id="wfh-taken-text" class="mb-0"></p></div>
+                <div class="modal-footer">
+                    <a href="{{ path('leave') }}#my-wfh" class="btn btn-link link-secondary me-auto">View My Requests</a>
+                    <button type="button" class="btn btn-primary wfh-taken-close">OK, Change Date</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var modal = document.getElementById('wfh-taken-modal');
+            var type = document.getElementById('leave_apply_form_title');
+            var from = document.getElementById('leave_apply_form_startDate');
+            if (modal === null || type === null || from === null) { return; }
+            var wfhKind = {{ wfh_kind|json_encode|raw }};
+            function show(message) {
+                document.getElementById('wfh-taken-text').textContent = message;
+                modal.style.display = 'block'; modal.classList.add('show');
+                if (!document.getElementById('wfh-taken-backdrop')) { var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'wfh-taken-backdrop'; document.body.appendChild(b); }
+            }
+            function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('wfh-taken-backdrop'); if (b) { b.remove(); } from.focus(); }
+            modal.querySelectorAll('.wfh-taken-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
+            {% for error in form.startDate.vars.errors %}
+                {% if loop.first and 'already asked to work from home' in error.message %}
+            show({{ error.message|json_encode|raw }});
+                {% endif %}
+            {% endfor %}
+            from.form.addEventListener('submit', function (event) {
+                if (type.value !== wfhKind) { return; }
+                var note = document.getElementById('leave-day-note');
+                var text = note ? note.textContent : '';
+                if (text.indexOf('already asked to work from home') !== -1) { event.preventDefault(); event.stopImmediatePropagation(); show(text + ' The same day cannot be asked for twice.'); }
+            }, true);
+        })();
+    </script>
 
     <script type="text/javascript">
         // "Comp-off Leave": choose the additional hours it is for; it is a single day (no "To")
@@ -193,6 +241,10 @@
             // comp-off: what each available credit is worth, and all of them together
             var creditDays = {{ credit_days|json_encode|raw }};
             var compOffTotal = Object.keys(creditDays).reduce(function (sum, id) { return sum + creditDays[id].days; }, 0);
+            // "Work from home": a WFH request for the immediate supervisor, not leave
+            var wfhKind = {{ wfh_kind|json_encode|raw }};
+            var wfhTaken = {{ wfh_taken|json_encode|raw }};
+            var wfhDaysBack = {{ wfh_days_back }};
 
             var type = document.getElementById('leave_apply_form_title');
             var location = document.getElementById('leave_apply_form_location');
@@ -275,19 +327,37 @@
                 var compOff = type.value === '{{ constant('App\\Entity\\TeamEvent::COMP_OFF') }}';
                 var credit = document.getElementById('leave_apply_form_compCredit');
                 var chosen = compOff && credit !== null ? (creditDays[credit.value] || null) : null;
-                document.getElementById('leave-day-label').textContent = compOff ? 'Comp-off days' : 'Leave days';
-                document.getElementById('leave-balance-label').textContent = compOff ? 'Comp-off available:' : 'Leave balance:';
+                var isWfh = type.value === wfhKind;
+                // document.getElementById('leave-day-label').textContent = compOff ? 'Comp-off days' : 'Leave days';
+                document.getElementById('leave-day-label').textContent = compOff ? 'Comp-off days' : (isWfh ? 'WFH days' : 'Leave days');
+                // a WFH request uses no leave: the balances are not shown for it
+                document.getElementById('leave-balance-box').classList.toggle('d-none', isWfh);
+                document.getElementById('comp-off-balance-box').classList.toggle('d-none', isWfh);
+                document.querySelector('label[for="leave_apply_form_description"]').classList.toggle('required', isWfh);
+                document.getElementById('leave_apply_form_description').required = isWfh;
+                var toLabel = document.querySelector('label[for="leave_apply_form_endDate"]');
+                if (toLabel !== null) { toLabel.textContent = isWfh ? 'To (last day)' : 'To (last day of leave)'; }
+                // document.getElementById('leave-balance-label').textContent = compOff ? 'Comp-off available:' : 'Leave balance:';
+                // the leave balance and the comp-off days are both always shown, each in its own box
+                document.getElementById('comp-off-balance-value').textContent = compOffTotal + (compOffTotal > 0 && compOffTotal <= 1 ? ' day' : ' days');
                 function show(days, remaining, problem) {
                     count.textContent = days === null ? '\u2013' : days + (days === 1 ? ' day' : ' days');
                     value.textContent = remaining;
                     // a comp-off is worth what its additional hours are worth (a quarter, half, three quarters or a full day)
                     if (compOff) {
                         count.textContent = chosen === null ? '\u2013' : chosen.label + (chosen.days < 1 ? ' (' + chosen.days + ' day)' : '');
-                        value.textContent = compOffTotal + (compOffTotal === 1 ? ' day' : ' days');
+                        // value.textContent = compOffTotal + (compOffTotal === 1 ? ' day' : ' days');
+                        value.textContent = balance;
                     }
                     note.textContent = problem || '';
                     info.textContent = '';
-                    box.className = 'badge ' + (problem ? 'bg-danger-lt' : 'bg-primary-lt');
+                    // box.className = 'badge ' + (problem ? 'bg-danger-lt' : 'bg-primary-lt');
+                    // a problem shows on the box of the kind of leave asked for
+                    box.className = 'badge ' + (problem && !compOff ? 'bg-danger-lt' : 'bg-primary-lt');
+                    document.getElementById('comp-off-balance-box').className = 'badge ' + (problem && compOff ? 'bg-danger-lt' : 'bg-purple-lt');
+                    // a WFH request uses no leave: the balances are not shown for it
+                    box.classList.toggle('d-none', isWfh);
+                    document.getElementById('comp-off-balance-box').classList.toggle('d-none', isWfh);
                 }
 
                 var first = parse(from);
@@ -301,6 +371,36 @@
                 // nothing picked yet: the box shows the balance as it is today
                 if (first === null || last === null) { show(null, balance, optionalFull); return; }
                 if (last < first) { show(null, balance, 'The last day is before the first day.'); return; }
+
+                /*
+                 * Work from home: not on a Saturday or Sunday, a holiday of the person's office, or a day of approved
+                 * leave (optional holidays included; a part-day comp-off leaves the rest of the day to work).
+                 * Such days inside longer dates are simply not counted.
+                 */
+                if (isWfh) {
+                    var blockedWhy = function (date) {
+                        if (date.getDay() === 0 || date.getDay() === 6) { return 'a ' + (date.getDay() === 0 ? 'Sunday' : 'Saturday'); }
+                        var holiday = holidayName(date);
+                        if (holiday !== null) { return 'a holiday (' + holiday + ')'; }
+                        var day = iso(date);
+                        var onLeave = taken.filter(function (leave) { return leave.approved && leave.from <= day && leave.to >= day; });
+                        return onLeave.length > 0 ? 'your approved leave: ' + onLeave[0].label : null;
+                    };
+                    var pretty = function (date) { return ('0' + date.getDate()).slice(-2) + '-' + months[date.getMonth()] + '-' + String(date.getFullYear()).slice(2); };
+                    var oldest = new Date(); oldest.setHours(0, 0, 0, 0); oldest.setDate(oldest.getDate() - wfhDaysBack);
+                    var wfhDays = 0;
+                    var walk = new Date(first.getTime());
+                    var guard = 0;
+                    while (walk <= last && guard++ < 400) { if (blockedWhy(walk) === null) { wfhDays++; } walk.setDate(walk.getDate() + 1); }
+                    if (first < oldest) { show(wfhDays, '', 'Work from home can be asked for up to ' + wfhDaysBack + ' days back.'); return; }
+                    var edge = blockedWhy(first) !== null ? first : (blockedWhy(last) !== null ? last : null);
+                    if (edge !== null) { show(wfhDays, '', 'You cannot work from home on ' + pretty(edge) + ': it is ' + blockedWhy(edge) + '.'); return; }
+                    if (wfhDays === 0) { show(wfhDays, '', 'There is no working day in these dates.'); return; }
+                    var wfhClash = wfhTaken.filter(function (request) { return request.from <= iso(last) && request.to >= iso(first); });
+                    if (wfhClash.length > 0) { show(wfhDays, '', 'You already asked to work from home on ' + wfhClash[0].label + '.'); return; }
+                    show(wfhDays, '', '');
+                    return;
+                }
 
                 var days = workingDays(first, last, isOptional);
 
@@ -357,7 +457,9 @@
              * every office counts as a holiday and every other festival day as optional.
              */
             function festivalKind(festival) {
-                if (type.value === 'Optional holiday' && location.value !== '') {
+                // if (type.value === 'Optional holiday' && location.value !== '') {
+                // a WFH request follows the holidays of the person's office as well
+                if ((type.value === 'Optional holiday' || type.value === wfhKind) && location.value !== '') {
                     var code = festival.codes[location.value];
                     return code === 'H' || code === 'O' ? code : null;
                 }

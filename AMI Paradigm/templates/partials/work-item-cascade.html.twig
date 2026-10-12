@@ -194,8 +194,8 @@
             var wanted = keep !== undefined && keep[level] !== undefined ? String(keep[level]) : '';
             if (wanted !== '' && options.some(function (item) { return String(item.id) === wanted; })) {
                 select.value = wanted;
-            } else if (options.length === 1 && level <= s.activityLevel) {
-                // nothing to choose from: take the only one
+            } else if (options.length === 1 && (level <= s.activityLevel || options[0].name === 'Others')) {
+                // nothing to choose from: take the only one (a Task only when it is "Others", made for an Activity "Others")
                 select.value = String(options[0].id);
             } else {
                 select.value = '';
@@ -446,6 +446,19 @@
             };
         }
 
+        /* the Project dropdown of a row: only the projects allocated to the person (and Non-Project Activities and
+           Pre-Sales); the project an entry is on already stays */
+        function gridProjects(tr) {
+            var p = gridParts(tr);
+            if (p.item === null || p.project === null || !p.item.dataset.allowedProjects) { return; }
+            var allowed;
+            try { allowed = JSON.parse(p.item.dataset.allowedProjects).map(String); } catch (e) { return; }
+            if (p.project._wiNodes === undefined) { remember(p.project); }
+            var current = p.project.value;
+            narrowProjects({project: p.project}, function (option) { return allowed.indexOf(option.value) !== -1 || option.value === current; });
+            redraw(p.project);
+        }
+
         function gridNarrow(tr) {
             var p = gridParts(tr);
             if (p.item === null || p.project === null) { return; }
@@ -482,7 +495,8 @@
             Array.prototype.forEach.call(rows, function (tr) {
                 if (tr._wiGrid) { return; }
                 tr._wiGrid = true;
-                window.setTimeout(function () { gridNarrow(tr); gridActivity(tr); }, 320);
+                // window.setTimeout(function () { gridNarrow(tr); gridActivity(tr); }, 320);
+                window.setTimeout(function () { gridProjects(tr); gridNarrow(tr); gridActivity(tr); }, 320);
             });
         }
 

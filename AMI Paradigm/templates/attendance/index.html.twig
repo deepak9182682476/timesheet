@@ -1,0 +1,178 @@
+{% extends 'base.html.twig' %}
+{% import "macros/widgets.html.twig" as widgets %}
+
+{# Attendance of one day (physically present: Yes / No), and the Excel template and upload for many days at once #}
+
+{% block main %}
+    {% set token = csrf_token('attendance') %}
+    {% set yesCount = entered|filter(v => v)|length %}
+    {% set noCount = entered|filter(v => not v)|length %}
+
+    {% if result is not null %}
+        <div class="alert {{ result.errors is empty ? 'alert-success' : 'alert-warning' }} mb-3">
+            <div class="fw-bold mb-1">Upload of {{ result.file }}: {{ result.rows }} rows read, {{ result.saved }} attendance {{ result.saved == 1 ? 'entry' : 'entries' }} saved or changed.</div>
+            {% if result.errors is not empty %}
+                <div>These rows were not saved:</div>
+                <ul class="mb-0">
+                    {% for line, error in result.errors %}<li>Row {{ line }}: {{ error }}</li>{% endfor %}
+                </ul>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <form method="post" action="{{ path('attendance', {'date': day|date('Y-m-d')}) }}" class="card mb-3" id="attendance-form">
+        <input type="hidden" name="_token" value="{{ token }}">
+        <div class="card-header">
+            <h3 class="card-title">Attendance of {{ day|date_format('d-M-y (l)') }}</h3>
+            <div class="card-actions d-flex align-items-center flex-wrap" style="gap: .5rem;">
+                <a href="{{ path('attendance', {'date': previous|date('Y-m-d')}) }}" class="btn btn-icon" title="Previous day"><i class="fas fa-chevron-left"></i></a>
+                <input type="date" class="form-control" style="width: 11rem;" value="{{ day|date('Y-m-d') }}" id="attendance-date">
+                <a href="{{ path('attendance', {'date': next|date('Y-m-d')}) }}" class="btn btn-icon" title="Next day"><i class="fas fa-chevron-right"></i></a>
+                <a href="{{ path('attendance') }}" class="btn">Today</a>
+            </div>
+        </div>
+        <div class="card-body border-bottom py-2 d-flex align-items-center flex-wrap" style="gap: .75rem;">
+            {# search by name, username or Employee ID #}
+            <div class="input-icon" style="width: 18rem;">
+                <span class="input-icon-addon"><i class="fas fa-search"></i></span>
+                <input type="search" class="form-control" id="attendance-search" placeholder="Search name or Employee ID" autocomplete="off">
+            </div>
+            <span class="badge bg-green-lt">Present: {{ yesCount }}</span>
+            <span class="badge bg-red-lt">Not present: {{ noCount }}</span>
+            <span class="badge bg-secondary-lt">Not entered: {{ people|length - yesCount - noCount }}</span>
+            <div class="ms-auto btn-list">
+                <button type="button" class="btn btn-outline-success" id="attendance-all-yes">Mark All Yes</button>
+                <button type="button" class="btn btn-outline-secondary" id="attendance-clear">Undo Changes</button>
+                <button type="submit" class="btn btn-primary">Submit Attendance</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Employee ID</th>
+                    {# <th>WFH</th> #}
+                    <th class="text-center">Physically Present</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for person in people %}
+                    {% set value = entered[person.id] ?? null %}
+                    {% set request = wfh[person.id] ?? null %}
+                    <tr class="attendance-row" data-search="{{ (person.displayName ~ ' ' ~ person.userIdentifier ~ ' ' ~ person.accountNumber|default(''))|lower }}">
+                        <td class="text-nowrap">{{ widgets.user_avatar(person, false, 'avatar-rounded avatar-xs me-1') }} {{ person.displayName }}</td>
+                        <td class="text-nowrap">
+                            {% if person.accountNumber is not empty %}
+                                {{ person.accountNumber }}
+                            {% else %}
+                                {# not set yet: entered on the user's profile (Edit > Employee ID) #}
+                                <a href="{{ path('user_profile_edit', {'username': person.userIdentifier}) }}" class="text-secondary small" title="Set the Employee ID on the user's profile">Not set &middot; add</a>
+                            {% endif %}
+                        </td>
+                        {# the WFH status is not shown here any more
+                        <td class="text-nowrap">
+                            {% if request is not null %}
+                                <span class="badge {{ request == 'approved' ? 'bg-green-lt' : 'bg-yellow-lt' }}">{{ request == 'approved' ? 'WFH approved' : 'WFH waiting for approval' }}</span>
+                            {% endif %}
+                        </td>
+                        #}
+                        <td class="text-center text-nowrap">
+                            <div class="btn-group" role="group">
+                                <input type="radio" class="btn-check attendance-yes" name="present[{{ person.id }}]" id="att-{{ person.id }}-yes" value="yes" autocomplete="off" {% if value is same as(true) %}checked{% endif %}>
+                                <label class="btn btn-sm" for="att-{{ person.id }}-yes">Yes</label>
+                                <input type="radio" class="btn-check attendance-no" name="present[{{ person.id }}]" id="att-{{ person.id }}-no" value="no" autocomplete="off" {% if value is same as(false) %}checked{% endif %}>
+                                <label class="btn btn-sm" for="att-{{ person.id }}-no">No</label>
+                                <input type="radio" class="btn-check attendance-none" name="present[{{ person.id }}]" id="att-{{ person.id }}-none" value="" autocomplete="off" {% if value is null %}checked{% endif %}>
+                                <label class="btn btn-sm" for="att-{{ person.id }}-none" title="Not entered">&ndash;</label>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {# one Submit Attendance button is enough: the one at the top, next to Mark All Yes
+        <div class="card-footer d-flex">
+            <button type="submit" class="btn btn-primary ms-auto">Submit Attendance</button>
+        </div>
+        #}
+    </form>
+
+    <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title">Export Attendance</h3></div>
+        <div class="card-body">
+            <div class="text-secondary small mb-2">An Excel file with every person for every day (Yes / No / Not entered), and a summary per person.</div>
+            <div class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
+                <a href="{{ path('attendance_export', {'period': 'week'}) }}" class="btn"><i class="fas fa-download me-2"></i>This Week</a>
+                <a href="{{ path('attendance_export', {'period': 'month'}) }}" class="btn"><i class="fas fa-download me-2"></i>This Month</a>
+                <span class="text-secondary mx-2 mb-2">or</span>
+                <form method="get" action="{{ path('attendance_export') }}" class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
+                    <div><label class="form-label small mb-1" for="exp-from">From</label><input type="date" class="form-control" name="from" id="exp-from" value="{{ day|date('Y-m-01') }}" required></div>
+                    <div><label class="form-label small mb-1" for="exp-to">To</label><input type="date" class="form-control" name="to" id="exp-to" value="{{ day|date('Y-m-d') }}" required></div>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-file-excel me-2"></i>Export</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title">Bulk Upload</h3></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-lg-6">
+                    <div class="fw-bold mb-2">1. Download the template</div>
+                    <div class="text-secondary small mb-2">One row per person and day; fill "Present (Yes/No)" with Yes or No. Up to {{ max_days }} days per file.</div>
+                    <form method="get" action="{{ path('attendance_template') }}" class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
+                        <div><label class="form-label small mb-1" for="att-from">From</label><input type="date" class="form-control" name="from" id="att-from" value="{{ day|date('Y-m-d') }}"></div>
+                        <div><label class="form-label small mb-1" for="att-to">To</label><input type="date" class="form-control" name="to" id="att-to" value="{{ day|date('Y-m-d') }}"></div>
+                        <button type="submit" class="btn"><i class="fas fa-download me-2"></i>Download Template</button>
+                    </form>
+                </div>
+                <div class="col-lg-6">
+                    <div class="fw-bold mb-2">2. Upload the filled file</div>
+                    <div class="text-secondary small mb-2">Rows with Yes or No are saved; empty ones keep what is entered. Uploading a day again overwrites it.</div>
+                    <form method="post" action="{{ path('attendance', {'date': day|date('Y-m-d')}) }}" enctype="multipart/form-data" class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
+                        <input type="hidden" name="_token" value="{{ token }}">
+                        <input type="hidden" name="action" value="upload">
+                        <input type="file" class="form-control" name="file" accept=".xlsx" required style="max-width: 20rem;">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-upload me-2"></i>Upload</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer text-secondary small">
+            Time entries from {{ tracking_from|date('d-M-y') }} on follow the attendance: "No" or not entered yet shows the entry with a light cement background;
+            with a WFH request waiting for approval it gets a thick border as well; "Yes" or an approved WFH request shows it as usual.
+        </div>
+    </div>
+
+    <style>
+        .btn-check.attendance-yes:checked + .btn { background-color: var(--tblr-green, #2fb344); border-color: var(--tblr-green, #2fb344); color: #fff; }
+        .btn-check.attendance-no:checked + .btn { background-color: var(--tblr-red, #d63939); border-color: var(--tblr-red, #d63939); color: #fff; }
+        .btn-check.attendance-none:checked + .btn { background-color: var(--tblr-secondary-lt, #f1f2f4); }
+    </style>
+    <script type="text/javascript">
+        (function () {
+            var date = document.getElementById('attendance-date');
+            date.addEventListener('change', function () {
+                if (date.value) { window.location = '{{ path('attendance') }}?date=' + date.value; }
+            });
+            // "Mark All Yes" marks the people shown (all of them, or those the search found)
+            document.getElementById('attendance-all-yes').addEventListener('click', function () {
+                document.querySelectorAll('.attendance-row').forEach(function (row) {
+                    if (row.style.display !== 'none') { row.querySelector('.attendance-yes').checked = true; }
+                });
+            });
+            var search = document.getElementById('attendance-search');
+            search.addEventListener('input', function () {
+                var words = search.value.toLowerCase().trim().split(/\s+/).filter(function (w) { return w !== ''; });
+                document.querySelectorAll('.attendance-row').forEach(function (row) {
+                    var text = row.dataset.search || '';
+                    row.style.display = words.every(function (w) { return text.indexOf(w) !== -1; }) ? '' : 'none';
+                });
+            });
+            document.getElementById('attendance-clear').addEventListener('click', function () { document.getElementById('attendance-form').reset(); });
+        })();
+    </script>
+{% endblock %}

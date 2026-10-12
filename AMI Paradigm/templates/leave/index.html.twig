@@ -121,6 +121,9 @@
         </div>
     {% endif %}
 
+    {# work from home requests, asked for with the leave type "Work from home" #}
+    {{ include('leave/_wfh.html.twig') }}
+
     <script type="text/javascript">
         // ask before withdrawing a leave request
         document.querySelectorAll('.leave-cancel-form').forEach(function (form) {

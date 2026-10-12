@@ -1,0 +1,124 @@
+{% extends 'base.html.twig' %}
+
+{# A WFH request: the day (or first and last day) and why. Days already asked for cannot be asked for again. #}
+{% block main %}
+    {% set formOptions = {
+        'title': 'Request WFH',
+        'form': form,
+        'back': path('wfh'),
+        'submit_button': 'Submit for Approval'
+    } %}
+    {% embed 'default/_form.html.twig' with formOptions %}
+        {% form_theme form 'form/horizontal.html.twig' %}
+        {% block form_body %}
+            <div class="mb-3 row">
+                <div class="col-sm-2"></div>
+                <div class="col-sm-10 text-secondary small">
+                    Your supervisor approves it. Until then, your time entries of these days are shown with a light grey background and a thick border;
+                    once approved they are shown as usual.
+                </div>
+            </div>
+            {{ form_row(form.startDate) }}
+            {{ form_row(form.endDate) }}
+            {{ form_row(form.reason) }}
+            {{ form_rest(form) }}
+        {% endblock %}
+    {% endembed %}
+
+    {# shown when a day was asked for already #}
+    <div class="modal modal-blur fade" id="wfh-taken-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Already Requested</h5>
+                    <button type="button" class="btn-close wfh-taken-close" aria-label="Close"></button>
+                </div>
+                <div class="modal-body"><p id="wfh-taken-text" class="mb-0"></p></div>
+                <div class="modal-footer">
+                    <a href="{{ path('wfh') }}" class="btn btn-link link-secondary me-auto">View My Requests</a>
+                    <button type="button" class="btn btn-primary wfh-taken-close">OK, Change Date</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var taken = {{ taken|json_encode|raw }};
+            var daysBack = {{ days_back }};
+            var maxDays = {{ max_days }};
+            var from = document.querySelector('input[id$="_startDate"]');
+            var to = document.querySelector('input[id$="_endDate"]');
+            if (from === null) { return; }
+            var form = from.form;
+
+            function readDate(field) {
+                if (field === null || field.value.trim() === '') { return null; }
+                var format = field.dataset.format || 'YYYY-MM-DD';
+                var names = format.match(/[A-Za-z]+/g) || [];
+                var numbers = field.value.match(/\d+/g) || [];
+                if (names.length !== numbers.length) { return null; }
+                var parts = {};
+                names.forEach(function (name, index) { parts[name.charAt(0).toUpperCase()] = parseInt(numbers[index], 10); });
+                if (!parts.Y || !parts.M || !parts.D) { return null; }
+                return parts.Y + '-' + (parts.M < 10 ? '0' : '') + parts.M + '-' + (parts.D < 10 ? '0' : '') + parts.D;
+            }
+            function iso(date) { return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + date.getDate()).slice(-2); }
+
+            var error = document.createElement('div');
+            error.className = 'invalid-feedback d-block';
+            (from.closest('.input-group') || from).insertAdjacentElement('afterend', error);
+            function takenProblem(first, last) {
+                for (var i = 0; i < taken.length; i++) {
+                    if (taken[i].from <= last && taken[i].to >= first) { return taken[i].message; }
+                }
+                return '';
+            }
+            function problem() {
+                var first = readDate(from);
+                if (first === null) { return ''; }
+                var last = readDate(to) || first;
+                var oldest = new Date(); oldest.setHours(0, 0, 0, 0); oldest.setDate(oldest.getDate() - daysBack);
+                if (first < iso(oldest)) { return 'WFH can be asked for up to ' + daysBack + ' days back.'; }
+                if (last < first) { return 'The last day is before the first day.'; }
+                if ((new Date(last + 'T00:00:00') - new Date(first + 'T00:00:00')) / 86400000 + 1 > maxDays) { return 'A request can cover at most ' + maxDays + ' days.'; }
+                return takenProblem(first, last);
+            }
+            var lastKey = null;
+            function check() {
+                var key = from.value + '|' + (to ? to.value : '');
+                if (key !== lastKey) {
+                    lastKey = key;
+                    from.closest('.row').querySelectorAll('.invalid-feedback').forEach(function (el) { if (el !== error) { el.classList.add('d-none'); } });
+                }
+                var text = problem();
+                error.textContent = text;
+                from.classList.toggle('is-invalid', text !== '');
+                return text === '';
+            }
+            [from, to].forEach(function (field) { if (field) { ['change', 'input', 'blur'].forEach(function (name) { field.addEventListener(name, check); }); } });
+            window.setInterval(check, 700);
+
+            var modal = document.getElementById('wfh-taken-modal');
+            function show(message) {
+                document.getElementById('wfh-taken-text').textContent = message;
+                modal.style.display = 'block'; modal.classList.add('show');
+                if (!document.getElementById('wfh-taken-backdrop')) { var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'wfh-taken-backdrop'; document.body.appendChild(b); }
+            }
+            function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('wfh-taken-backdrop'); if (b) { b.remove(); } from.focus(); }
+            modal.querySelectorAll('.wfh-taken-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
+            {% for error in form.startDate.vars.errors %}
+                {% if loop.first and 'already asked' in error.message %}
+            show({{ error.message|json_encode|raw }});
+                {% endif %}
+            {% endfor %}
+
+            form.addEventListener('submit', function (event) {
+                var first = readDate(from);
+                var already = first !== null ? takenProblem(first, readDate(to) || first) : '';
+                if (already !== '') { event.preventDefault(); event.stopImmediatePropagation(); check(); show(already); return; }
+                if (!check()) { event.preventDefault(); event.stopImmediatePropagation(); from.focus(); }
+            }, true);
+        })();
+    </script>
+{% endblock %}

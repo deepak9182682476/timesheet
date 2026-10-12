@@ -16,6 +16,7 @@
 {% macro worked(item) %}
     {{ item.workDate|date_short }}
     <div class="text-secondary small">{{ item.workDate|date_format('l') }} &middot; {{ item.reasonLabel }}</div>
+    {% if item.timeLabel is not empty %}<div class="text-secondary small"><i class="far fa-clock me-1"></i>{{ item.timeLabel }}</div>{% endif %}
 {% endmacro %}
 
 {% block main %}

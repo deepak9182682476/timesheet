@@ -27,7 +27,9 @@ final class LeaveApplyForm extends AbstractType
     // public const KINDS = ['Casual leave', 'Sick leave', 'Earned leave', 'Comp off', 'Optional holiday', 'Other leave'];
     // public const KINDS = ['Casual leave', 'Sick leave', 'Earned leave', TeamEvent::COMP_OFF, 'Optional holiday', 'Other leave'];
     // "Earned leave" is not offered any more (leave applied for earlier keeps its type)
-    public const KINDS = ['Casual leave', 'Sick leave', TeamEvent::COMP_OFF, 'Optional holiday', 'Other leave'];
+    // public const KINDS = ['Casual leave', 'Sick leave', TeamEvent::COMP_OFF, 'Optional holiday', 'Other leave'];
+    // "Work from home" is a WFH request (saved as a WfhRequest, approved by the immediate supervisor), not leave
+    public const KINDS = ['Casual leave', 'Sick leave', TeamEvent::COMP_OFF, 'Optional holiday', \App\TeamEvent\WfhService::LEAVE_KIND, 'Other leave'];
 
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
