@@ -59,7 +59,10 @@
             function apply() {
                 var compOff = type.value === '{{ constant('App\\Entity\\TeamEvent::COMP_OFF') }}';
                 creditRow.classList.toggle('d-none', !compOff);
-                credit.required = compOff;
+                // credit.required = compOff;
+                // without any comp-off the browser's "Please select an item" is not shown: a popup explains it (below)
+                var hasCredits = Array.prototype.some.call(credit.options, function (o) { return o.value !== ''; });
+                credit.required = compOff && hasCredits;
                 if (toRow !== null) {
                     toRow.classList.toggle('d-none', compOff);
                     if (compOff) { to.value = ''; }
@@ -69,6 +72,54 @@
             apply();
         })();
     </script>
+    {# Comp-off Leave picked, but the person has no comp-off to use: say so instead of the browser's "Please select an item" #}
+    <div class="modal modal-blur fade" id="comp-off-none-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">No Comp-off Available</h5>
+                    <button type="button" class="btn-close comp-off-none-close" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    You do not have any comp-off to use. A comp-off comes from extra hours you worked on a weekend, a festival
+                    or holiday, or a night shift: claim them under <strong>Apply Leave &gt; Extra Hours Claim</strong>, and once
+                    your manager approves them you can take them here within {{ constant('App\\Entity\\AdditionalHours::CREDIT_VALID_DAYS') }} days of the day worked.
+                </div>
+                <div class="modal-footer">
+                    <a href="#" class="btn btn-link link-secondary me-auto comp-off-none-close">Close</a>
+                    <a href="{{ path('additional_hours') }}" class="btn btn-primary">Go to Extra Hours Claim</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var type = document.getElementById('leave_apply_form_title');
+            var credit = document.getElementById('leave_apply_form_compCredit');
+            var modal = document.getElementById('comp-off-none-modal');
+            if (type === null || credit === null || credit.form === null) { return; }
+            function show() { modal.style.display = 'block'; modal.classList.add('show'); var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'comp-off-none-backdrop'; document.body.appendChild(b); }
+            function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('comp-off-none-backdrop'); if (b) { b.remove(); } }
+            modal.querySelectorAll('.comp-off-none-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
+            var hasCredits = Array.prototype.some.call(credit.options, function (o) { return o.value !== ''; });
+            // on Apply, before anything else is checked
+            credit.form.addEventListener('submit', function (event) {
+                if (type.value !== '{{ constant('App\\Entity\\TeamEvent::COMP_OFF') }}' || hasCredits) { return; }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                show();
+            }, true);
+            // the Apply button is also clicked through the browser's own checks first: avoid "Please fill out" on the date
+            credit.form.querySelectorAll('[type="submit"]').forEach(function (button) {
+                button.addEventListener('click', function (event) {
+                    if (type.value !== '{{ constant('App\\Entity\\TeamEvent::COMP_OFF') }}' || hasCredits) { return; }
+                    event.preventDefault();
+                    show();
+                });
+            });
+        })();
+    </script>
+
     {# asked before applying a comp-off worth less than a full day #}
     <div class="modal modal-blur fade" id="comp-off-part-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" role="document">

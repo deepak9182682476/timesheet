@@ -404,15 +404,20 @@ final class TimesheetTeamController extends TimesheetAbstractController
     {
         $session = $request->getSession();
         $key = 'team_dashboard_period';
+        // a range picked on "All" is for the whole dashboard (every tab and project)
+        $globalKey = 'team_dashboard_period_all';
+        $isAll = str_starts_with($context, 'all|');
         $timezone = new \DateTimeZone($this->getUser()->getTimezone());
 
-        // a range picked on another tab or project does not carry over: back to this week
+        // a range picked on another tab or project does not carry over (the one from "All" does, see below)
         if ($session->get($key . '_context') !== $context) {
             $session->remove($key);
         }
 
         if ($request->query->get('period') === 'week') {
+            // "Reset": this week again, everywhere
             $session->remove($key);
+            $session->remove($globalKey);
         } elseif ($request->query->has('from') && $request->query->has('to')) {
             $from = \DateTime::createFromFormat('!Y-m-d', (string) $request->query->get('from'), $timezone);
             $to = \DateTime::createFromFormat('!Y-m-d', (string) $request->query->get('to'), $timezone);
@@ -420,12 +425,18 @@ final class TimesheetTeamController extends TimesheetAbstractController
                 if ($to < $from) {
                     [$from, $to] = [$to, $from];
                 }
-                $session->set($key, [$from->format('Y-m-d'), $to->format('Y-m-d')]);
-                $session->set($key . '_context', $context);
+                if ($isAll) {
+                    $session->set($globalKey, [$from->format('Y-m-d'), $to->format('Y-m-d')]);
+                    $session->remove($key);
+                } else {
+                    $session->set($key, [$from->format('Y-m-d'), $to->format('Y-m-d')]);
+                    $session->set($key . '_context', $context);
+                }
             }
         }
 
-        $stored = $session->get($key);
+        // this tab's own range, else the one picked on "All", else this week
+        $stored = $session->get($key) ?? $session->get($globalKey);
         if (\is_array($stored) && \count($stored) === 2) {
             $begin = new \DateTime($stored[0] . ' 00:00:00', $timezone);
             $end = new \DateTime($stored[1] . ' 23:59:59', $timezone);

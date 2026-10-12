@@ -80,7 +80,8 @@ final class MenuSubscriber implements EventSubscriberInterface
         $additional->setChildRoutes(['additional_hours_new']);
         $leave->addChild($additional);
         $leave->addChild(new MenuItemModel('holiday_calendar', 'Holiday Calendar', 'holiday_calendar', [], 'fas fa-calendar-alt'));
-        $leave->setExpanded(true);
+        // only the section of the page that is open is shown expanded (not every section on every page)
+        // $leave->setExpanded(true);
         $menu->addChild($leave);
 
         // ------------------- timesheet menu -------------------
@@ -107,7 +108,7 @@ final class MenuSubscriber implements EventSubscriberInterface
         $times->addChild(new MenuItemModel('dashboard', 'dashboard.title', 'dashboard', [], 'dashboard'));
 
         if ($times->hasChildren()) {
-            $times->setExpanded(true); // Kimai is all about time-tracking, so we expand this menu always
+            // $times->setExpanded(true); // Kimai is all about time-tracking, so we expand this menu always
             $menu->addChild($times);
         }
 
@@ -155,7 +156,7 @@ final class MenuSubscriber implements EventSubscriberInterface
         }
 
         if ($projectTimes->hasChildren()) {
-            $projectTimes->setExpanded(true);
+            // $projectTimes->setExpanded(true);
             $menu->addChild($projectTimes);
         }
 
@@ -277,23 +278,26 @@ final class MenuSubscriber implements EventSubscriberInterface
             $this->addDivider($menu);
         }
 
-        if ($auth->isGranted('plugins')) {
-            $menu->addChild(
-                new MenuItemModel('plugins', 'menu.plugin', 'plugins', [], 'plugin')
-            );
-        }
-
-        if ($auth->isGranted('system_configuration')) {
-            $systemConfig = new MenuItemModel('configurations', 'menu.system_configuration', 'system_configuration', [], 'configuration');
-            $systemConfig->setChildRoutes(['system_configuration_update', 'system_configuration_section']);
-            $menu->addChild($systemConfig);
-        }
-
-        if ($auth->isGranted('system_information')) {
-            $menu->addChild(
-                new MenuItemModel('doctor', 'Doctor', 'doctor', [], 'doctor')
-            );
-        }
+        // Plugins, Settings and Doctor are hidden from the menu (no plugins are used; Settings and Doctor are only for
+        // rare system maintenance). The pages still work for administrators at /admin/plugins, /admin/system-config
+        // and /doctor. Remove the comment marks to bring the menu items back.
+        // if ($auth->isGranted('plugins')) {
+        //     $menu->addChild(
+        //         new MenuItemModel('plugins', 'menu.plugin', 'plugins', [], 'plugin')
+        //     );
+        // }
+        //
+        // if ($auth->isGranted('system_configuration')) {
+        //     $systemConfig = new MenuItemModel('configurations', 'menu.system_configuration', 'system_configuration', [], 'configuration');
+        //     $systemConfig->setChildRoutes(['system_configuration_update', 'system_configuration_section']);
+        //     $menu->addChild($systemConfig);
+        // }
+        //
+        // if ($auth->isGranted('system_information')) {
+        //     $menu->addChild(
+        //         new MenuItemModel('doctor', 'Doctor', 'doctor', [], 'doctor')
+        //     );
+        // }
 
         $this->addDivider($menu);
     }

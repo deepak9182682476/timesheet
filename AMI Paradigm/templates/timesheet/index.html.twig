@@ -23,11 +23,14 @@
             <span class="text-secondary">to</span>
             <input type="date" name="to" value="{{ period.end|date('Y-m-d') }}" class="form-control form-control-sm" style="width: auto" required aria-label="To">
             <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+            {# Reset: back to this week, on every tab and project #}
+            <a href="{{ path(listRoute, {'view': listView, 'period': 'week'}) }}" class="btn btn-sm">Reset</a>
             {% if period.week %}
                 <span class="badge bg-blue-lt ms-1">This Week</span>
-            {% else %}
-                <a href="{{ path(listRoute, {'view': listView, 'period': 'week'}) }}" class="btn btn-sm">This Week</a>
             {% endif %}
+            {# {% else %}
+                <a href="{{ path(listRoute, {'view': listView, 'period': 'week'}) }}" class="btn btn-sm">This Week</a>
+            {% endif %} #}
         </form>
     {% endif %}
 
