@@ -132,7 +132,9 @@
                     <tr>
                         <th>Person</th>
                         <th>Role in the System</th>
-                        <th style="min-width: 280px">Role in the Project</th>
+                        <th style="min-width: 200px">Role in the Project</th>
+                        {# the person's Allocation ID on each project of the team, and its periods (Allocation No. 1, 2 ...) #}
+                        <th style="min-width: 210px">Allocation</th>
                         {# <th class="text-center">Team lead</th> #}
                         <th class="w-1"></th>
                     </tr>
@@ -158,20 +160,51 @@
                                     {% for role in roles %}<option value="{{ role }}"{% if role in mine %} selected{% endif %}>{{ role }}</option>{% endfor %}
                                 </select>
                             </td>
+                            <td>
+                                {% for projectId, projectName in linked_projects %}
+                                    {% set alloc = allocations[person.id][projectId] ?? null %}
+                                    <div class="alloc-block{% if not loop.last %} mb-2{% endif %}">
+                                        <div class="d-flex align-items-center flex-wrap gap-1">
+                                            {% if linked_projects|length > 1 %}<span class="fw-bold small">{{ projectName }}</span>{% endif %}
+                                            {% if alloc is not null %}<span class="badge bg-blue-lt" title="Allocation ID">{{ alloc.code }}</span>{% endif %}
+                                            <button type="button" class="btn btn-sm btn-ghost-primary py-0 px-1 alloc-add" data-user="{{ person.id }}" data-name="{{ person.displayName }}" data-project="{{ projectId }}"><i class="fas fa-plus me-1"></i>Add Period</button>
+                                        </div>
+                                        {% if alloc is null or alloc.periods is empty %}
+                                            <div class="text-danger small">Not allocated yet: add the From and To dates.</div>
+                                        {% else %}
+                                            {% for period in alloc.periods %}
+                                                <div class="d-flex align-items-center gap-1 small alloc-period">
+                                                    <span class="text-secondary">No. {{ period.number }}:</span>
+                                                    <span>{{ period.from|date('d M Y') }} &rarr; {{ period.to|date('d M Y') }}</span>
+                                                    <form method="post" action="{{ path('team_mapping_allocation_remove', {'id': selected.id, 'period': period.id}) }}" class="d-inline alloc-remove-form" data-what="{{ alloc.code }} Allocation No. {{ period.number }}">
+                                                        <input type="hidden" name="_token" value="{{ csrf }}">
+                                                        <button type="submit" class="btn btn-sm btn-ghost-danger py-0 px-1" title="Remove this period">&times;</button>
+                                                    </form>
+                                                </div>
+                                            {% endfor %}
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    <span class="text-secondary small">Link a project to the team first.</span>
+                                {% endfor %}
+                            </td>
                             {# Team lead column hidden: who leads a team stays as it is (the person who created it)
                             <td class="text-center">
                                 <input type="checkbox" class="form-check-input" name="lead" value="1" form="{{ formId }}"{% if member.teamlead %} checked{% endif %}>
                             </td> #}
+                            {# Save above Remove so the buttons stay inside the window #}
                             <td class="text-nowrap">
-                                <form method="post" id="{{ formId }}" action="{{ path('team_mapping_member', {'id': selected.id}) }}" class="d-inline">
+                                <div class="d-flex flex-column gap-1">
+                                <form method="post" id="{{ formId }}" action="{{ path('team_mapping_member', {'id': selected.id}) }}">
                                     <input type="hidden" name="_token" value="{{ csrf }}">
                                     <input type="hidden" name="user" value="{{ person.id }}">
-                                    <button type="submit" class="btn btn-sm">{{ 'action.save'|trans }}</button>
+                                    <button type="submit" class="btn btn-sm w-100">{{ 'action.save'|trans }}</button>
                                 </form>
-                                <form method="post" action="{{ path('team_mapping_member_remove', {'id': selected.id, 'user': person.id}) }}" class="d-inline member-remove-form" data-name="{{ person.displayName }}">
+                                <form method="post" action="{{ path('team_mapping_member_remove', {'id': selected.id, 'user': person.id}) }}" class="member-remove-form" data-name="{{ person.displayName }}">
                                     <input type="hidden" name="_token" value="{{ csrf }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger w-100">Remove</button>
                                 </form>
+                                </div>
                             </td>
                         </tr>
                     {% endfor %}
@@ -190,6 +223,17 @@
                             <select class="form-select team-select" name="role[]" form="member-new" multiple data-create="1" data-placeholder="Choose or type roles">
                                 {% for role in roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
                             </select>
+                        </td>
+                        {# the first allocation of the new person: From and To, within the project dates (mandatory) #}
+                        <td>
+                            {% if linked_projects is not empty %}
+                                {# From above To so the row stays inside the window #}
+                                <div class="d-flex flex-column gap-1">
+                                    <input type="date" class="form-control form-control-sm alloc-range-from" name="alloc_from" form="member-new" required title="Allocation from">
+                                    <input type="date" class="form-control form-control-sm alloc-range-to" name="alloc_to" form="member-new" required title="Allocation to">
+                                </div>
+                                <div class="text-secondary small mt-1">Allocation from and to (required)</div>
+                            {% endif %}
                         </td>
                         {# <td class="text-center">
                             <input type="checkbox" class="form-check-input" name="lead" value="1" form="member-new">
@@ -210,6 +254,94 @@
                 Only active people can be added.
             </div>
         </div>
+    {% endif %}
+
+    {% if selected is not null and linked_projects is defined and linked_projects is not empty %}
+        {# another period on a project: the next Allocation No. #}
+        <div class="modal modal-blur fade" id="alloc-modal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <form method="post" action="{{ path('team_mapping_allocation', {'id': selected.id}) }}" class="modal-content" id="alloc-form">
+                    <input type="hidden" name="_token" value="{{ csrf_token(token) }}">
+                    <input type="hidden" name="user" id="alloc-user">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Add Allocation Period</h5>
+                        <button type="button" class="btn-close alloc-close" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-3" id="alloc-who"></p>
+                        <div class="mb-3">
+                            <label class="form-label required" for="alloc-project">Project</label>
+                            <select class="form-select" name="project" id="alloc-project" required>
+                                {% for projectId, projectName in linked_projects %}
+                                    <option value="{{ projectId }}" data-start="{{ project_dates[projectId].start ?? '' }}" data-end="{{ project_dates[projectId].end ?? '' }}">{{ projectName }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-6 mb-2">
+                                <label class="form-label required" for="alloc-from">From</label>
+                                <input type="date" class="form-control" name="alloc_from" id="alloc-from" required>
+                            </div>
+                            <div class="col-6 mb-2">
+                                <label class="form-label required" for="alloc-to">To</label>
+                                <input type="date" class="form-control" name="alloc_to" id="alloc-to" required>
+                            </div>
+                        </div>
+                        <div class="text-secondary small" id="alloc-hint"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link link-secondary me-auto alloc-close">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Period</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var modal = document.getElementById('alloc-modal');
+                var project = document.getElementById('alloc-project');
+                var from = document.getElementById('alloc-from');
+                var to = document.getElementById('alloc-to');
+                var hint = document.getElementById('alloc-hint');
+                var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                function pretty(value) { if (!value) { return 'not set'; } var p = value.split('-'); return p[2] + ' ' + MONTHS[parseInt(p[1], 10) - 1] + ' ' + p[0]; }
+                /* the dates can only be picked within the project's start and end date */
+                function limits() {
+                    var option = project.selectedOptions[0];
+                    var start = option ? option.dataset.start : '', end = option ? option.dataset.end : '';
+                    [from, to].forEach(function (input) { input.min = start || ''; input.max = end || ''; });
+                    hint.textContent = 'Within the project dates: ' + pretty(start) + ' to ' + pretty(end) + '. Periods of one person on a project cannot overlap.';
+                }
+                function keepOrder() { to.min = from.value || (project.selectedOptions[0] ? project.selectedOptions[0].dataset.start : '') || ''; }
+                project.addEventListener('change', limits);
+                from.addEventListener('change', keepOrder);
+                function show() { modal.style.display = 'block'; modal.classList.add('show'); var b = document.createElement('div'); b.className = 'modal-backdrop fade show'; b.id = 'alloc-backdrop'; document.body.appendChild(b); }
+                function hide() { modal.style.display = 'none'; modal.classList.remove('show'); var b = document.getElementById('alloc-backdrop'); if (b) { b.remove(); } }
+                modal.querySelectorAll('.alloc-close').forEach(function (el) { el.addEventListener('click', function (e) { e.preventDefault(); hide(); }); });
+                document.querySelectorAll('.alloc-add').forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        document.getElementById('alloc-user').value = button.dataset.user;
+                        document.getElementById('alloc-who').textContent = 'A new period for ' + button.dataset.name + ' (the next Allocation No.).';
+                        project.value = button.dataset.project;
+                        from.value = ''; to.value = '';
+                        limits();
+                        show();
+                    });
+                });
+                document.querySelectorAll('.alloc-remove-form').forEach(function (form) {
+                    form.addEventListener('submit', function (event) { if (!window.confirm('Remove ' + form.dataset.what + '?')) { event.preventDefault(); } });
+                });
+                /* adding a person: their first period must fit every project of the team */
+                var starts = [], ends = [];
+                Array.prototype.forEach.call(project.options, function (option) { if (option.dataset.start) { starts.push(option.dataset.start); } if (option.dataset.end) { ends.push(option.dataset.end); } });
+                var newFrom = document.querySelector('.alloc-range-from'), newTo = document.querySelector('.alloc-range-to');
+                if (newFrom && newTo) {
+                    var min = starts.length ? starts.sort().slice(-1)[0] : '', max = ends.length ? ends.sort()[0] : '';
+                    [newFrom, newTo].forEach(function (input) { input.min = min; input.max = max; });
+                    newFrom.addEventListener('change', function () { newTo.min = newFrom.value || min; });
+                }
+            })();
+        </script>
     {% endif %}
 
     <style>

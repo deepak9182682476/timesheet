@@ -79,9 +79,24 @@ final class WorkModelService
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
-        private readonly TaskService $tasks
+        private readonly TaskService $tasks,
+        private readonly \App\Team\AllocationService $allocations,
     )
     {
+    }
+
+    /**
+     * Time on an Agile or Waterfall project is logged only on the days the person is allocated to it (Team Allocation:
+     * their periods, Allocation No. 1, 2 ...). Null when allowed, else why not. Non-Project Activities and Pre-Sales
+     * are open to everybody.
+     */
+    public function getAllocationProblem(User $person, Project $project, \DateTimeInterface $day): ?string
+    {
+        if (!\in_array($this->getModel($project), [self::AGILE, self::WATERFALL], true)) {
+            return null;
+        }
+
+        return $this->allocations->getLoggingProblem($person, (int) $project->getId(), (string) $project->getName(), $day);
     }
 
     // ------------------------------------------------------------------ models
@@ -1271,6 +1286,22 @@ final class WorkModelService
         // everything of a project is for all the people in its teams (Team Mapping)
         if ($timesheet->getId() === null && !($timesheet instanceof MultiUserTimesheet) && $user !== null && !$this->isProjectMember((int) $project->getId(), (int) $user->getId())) {
             return \sprintf('%s is not in a team of the project "%s". A Project Lead or Project Manager adds them on the "Team Allocation" page.', $user->getDisplayName(), $project->getName());
+        }
+
+        // only on the days the person is allocated to the project: new entries, and entries moved to another day or project
+        // (an entry for several people at once is checked person by person, see TimesheetTeamController)
+        if (!($timesheet instanceof MultiUserTimesheet) && $user !== null && $timesheet->getBegin() !== null) {
+            $changed = $timesheet->getId() === null;
+            if (!$changed) {
+                $original = $this->entityManager->getUnitOfWork()->getOriginalEntityData($timesheet);
+                $before = $original['begin'] ?? null;
+                $beforeProject = $original['project'] ?? null;
+                $changed = !($before instanceof \DateTimeInterface) || $before->format('Y-m-d') !== $timesheet->getBegin()->format('Y-m-d')
+                    || ($beforeProject instanceof Project && $beforeProject->getId() !== $project->getId());
+            }
+            if ($changed && ($problem = $this->getAllocationProblem($user, $project, $timesheet->getBegin())) !== null) {
+                return $problem;
+            }
         }
 
         return null;

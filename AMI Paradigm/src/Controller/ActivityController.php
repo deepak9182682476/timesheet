@@ -479,7 +479,8 @@ final class ActivityController extends AbstractController
 
     private function createPageSetup(): PageSetup
     {
-        $page = new PageSetup('activities');
+        // $page = new PageSetup('activities');
+        $page = new PageSetup('Non Project Activities');
         $page->setHelp('activity.html');
 
         return $page;

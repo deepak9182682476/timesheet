@@ -122,6 +122,11 @@ final class TimesheetTeamController extends TimesheetAbstractController
                     if ($entry->getBegin() !== null && ($message = $this->weeklyCutoff->getMessage($this->getUser(), $user, $entry->getBegin())) !== null) {
                         $cutoffProblems[] = $message;
                     }
+                    // and only on the days each person is allocated to the project (Team Allocation)
+                    if ($entry->getBegin() !== null && $entry->getProject() !== null
+                        && ($message = $this->workModels->getAllocationProblem($user, $entry->getProject(), $entry->getBegin())) !== null) {
+                        $cutoffProblems[] = $message;
+                    }
                 }
                 if ($cutoffProblems !== []) {
                     foreach (array_unique($cutoffProblems) as $message) {
@@ -393,6 +398,148 @@ final class TimesheetTeamController extends TimesheetAbstractController
         return $scoped;
     }
 
+    private ?\App\Repository\UserRepository $users = null;
+
+    #[\Symfony\Contracts\Service\Attribute\Required]
+    public function setUserRepository(\App\Repository\UserRepository $users): void
+    {
+        $this->users = $users;
+    }
+
+    /**
+     * The person and activity picked under the charts of a project (or by clicking a slice), kept for the session
+     * while the same tab and project are open: ['user' => ?User, 'activity' => ?int].
+     */
+    private array $dashboardFilter = ['user' => null, 'activity' => null, 'task' => null];
+    /** the dashboard looks at "All" (no person or activity is picked there) */
+    private bool $dashboardAll = true;
+
+    private const FILTER_KEY = 'team_dashboard_filter';
+
+    protected function readDashboardFilter(Request $request, string $context): void
+    {
+        $this->dashboardAll = str_starts_with($context, 'all|');
+        $session = $request->getSession();
+        $stored = $session->get(self::FILTER_KEY);
+        if (!\is_array($stored) || ($stored['context'] ?? null) !== $context) {
+            $stored = ['context' => $context, 'user' => 0, 'activity' => 0, 'task' => ''];
+        }
+        if ($request->query->get('period') === 'week') {
+            // "Reset" starts the dashboard afresh
+            $stored['user'] = 0;
+            $stored['activity'] = 0;
+            $stored['task'] = '';
+        }
+        if ($request->query->has('pie_user')) {
+            $stored['user'] = $request->query->getInt('pie_user');
+            // another person: their activities and tasks differ
+            $stored['activity'] = 0;
+            $stored['task'] = '';
+        }
+        if ($request->query->has('pie_activity')) {
+            $stored['activity'] = $request->query->getInt('pie_activity');
+            $stored['task'] = '';
+        }
+        if ($request->query->has('pie_task')) {
+            $stored['task'] = (string) $request->query->get('pie_task', '');
+        }
+        $session->set(self::FILTER_KEY, $stored);
+
+        $task = (string) ($stored['task'] ?? '');
+        $this->dashboardFilter = [
+            'user' => $this->findTeamPerson((int) $stored['user']),
+            'activity' => (int) $stored['activity'] > 0 ? (int) $stored['activity'] : null,
+            'task' => $task !== '' && $task !== '0' ? $task : null,
+        ];
+        if ($this->dashboardAll) {
+            $this->dashboardFilter = ['user' => null, 'activity' => null, 'task' => null];
+        }
+    }
+
+    /** a person of the dashboard's team (anybody for administrators) */
+    private function findTeamPerson(int $id): ?User
+    {
+        if ($id <= 0) {
+            return null;
+        }
+        $viewer = $this->getUser();
+        if (!$viewer->canSeeAllData()) {
+            foreach ($this->workModels->getTeamPeople($viewer) as $person) {
+                if ((int) $person->getId() === $id) {
+                    return $person;
+                }
+            }
+
+            return null;
+        }
+
+        return $this->users?->find($id);
+    }
+
+    protected function applyDashboardFilter(TimesheetQuery $query): TimesheetQuery
+    {
+        return $this->filterBy($query, $this->dashboardFilter['user'], $this->dashboardFilter['activity'], $this->dashboardFilter['task']);
+    }
+
+    private function filterBy(TimesheetQuery $query, ?User $person, ?int $activity, ?string $task = null): TimesheetQuery
+    {
+        if ($person === null && $activity === null && $task === null) {
+            return $query;
+        }
+        $filtered = clone $query;
+        if ($person !== null) {
+            foreach ($filtered->getUsers() as $other) {
+                $filtered->removeUser($other);
+            }
+            $filtered->setUser(null);
+            $filtered->addUser($person);
+        }
+        if ($activity !== null) {
+            $filtered->setActivities([$activity]);
+        }
+        if ($task !== null) {
+            $filtered->setTaskName($task);
+        }
+
+        return $filtered;
+    }
+
+    /**
+     * The export (Export button above the list) holds what the dashboard shows: the project picked on the
+     * "Project" tab, the date range of the dashboard, and the person and activity picked under the charts.
+     */
+    protected function scopeDashboardExport(Request $request, TimesheetQuery $listQuery, TimesheetQuery $query, string $view): TimesheetQuery
+    {
+        $scoped = clone $listQuery;
+        $projectId = 0;
+        if ($view === self::VIEW_PROJECT) {
+            $projectId = (int) $request->getSession()->get('timesheet_project_' . $this->getTimesheetRoute(), 0);
+            if ($projectId > 0) {
+                $scoped->setProjects([$projectId]);
+            }
+        } elseif (($single = $this->getViewProject($view)) !== null) {
+            $projectId = $single[0];
+        }
+
+        $context = $view . '|' . $projectId;
+        // what the dashboard had: read without changing anything kept in the session
+        $plain = new Request([], [], [], [], [], [], null);
+        $plain->setSession($request->getSession());
+        $period = $this->getDashboardPeriod($plain, $context);
+        if ($period !== null) {
+            $begin = $scoped->getBegin();
+            $end = $scoped->getEnd();
+            $scoped->setBegin($begin !== null && $begin > $period['begin'] ? $begin : $period['begin']);
+            $scoped->setEnd($end !== null && $end < $period['end'] ? $end : $period['end']);
+            // the export's own header shows the same period
+            $query->setBegin(clone $scoped->getBegin());
+            $query->setEnd(clone $scoped->getEnd());
+        }
+        $this->readDashboardFilter($plain, $context);
+
+        return $scoped;
+    }
+
     /** the period of the dashboard, see getDashboardPeriod() */
     private ?array $period = null;
 
@@ -501,7 +648,9 @@ final class TimesheetTeamController extends TimesheetAbstractController
                 if ($row['seconds'] <= 0) {
                     continue;
                 }
-                $slices[] = ['label' => $row['label'] !== '' ? $row['label'] : $empty, 'seconds' => $row['seconds']];
+                // $slices[] = ['label' => $row['label'] !== '' ? $row['label'] : $empty, 'seconds' => $row['seconds']];
+                // the key (person or activity ID) lets a click on the slice pick it
+                $slices[] = ['label' => $row['label'] !== '' ? $row['label'] : $empty, 'seconds' => $row['seconds'], 'key' => $row['key']];
             }
             usort($slices, static fn ($a, $b) => $b['seconds'] <=> $a['seconds']);
 
@@ -524,9 +673,32 @@ final class TimesheetTeamController extends TimesheetAbstractController
             }
             $charts[] = ['title' => 'Total Hours', 'slices' => $slices, 'colors' => ['#206bc4', '#f59f00', '#2fb344']];
         } else {
-            $charts[] = ['title' => 'Total Hours on ' . $project, 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'user'), 'Unknown'), 'colors' => null];
-            $charts[] = ['title' => 'Hours by Activity', 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'activity'), 'No activity'), 'colors' => null];
-            $charts[] = ['title' => 'Hours by Task', 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'task'), 'No task'), 'colors' => null];
+            // $charts[] = ['title' => 'Total Hours on ' . $project, 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'user'), 'Unknown'), 'colors' => null];
+            // $charts[] = ['title' => 'Hours by Activity', 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'activity'), 'No activity'), 'colors' => null];
+            // $charts[] = ['title' => 'Hours by Task', 'slices' => $toPie($this->repository->getDurationsGroupedBy($listQuery, 'task'), 'No task'), 'colors' => null];
+            // everybody's hours; the activities of the picked person; the tasks of the picked person and activity
+            $person = $this->dashboardFilter['user'];
+            $activity = $this->dashboardFilter['activity'];
+            $byPerson = $this->filterBy($listQuery, null, null);
+            $byActivity = $this->filterBy($listQuery, $person, null);
+            $byTask = $this->filterBy($listQuery, $person, $activity);
+            $who = $person !== null ? ' of ' . $person->getDisplayName() : '';
+            $charts[] = ['title' => 'Total Hours on ' . $project, 'slices' => $toPie($this->repository->getDurationsGroupedBy($byPerson, 'user'), 'Unknown'), 'colors' => null, 'pick' => 'pie_user'];
+            $charts[] = ['title' => 'Hours by Activity' . $who, 'slices' => $toPie($this->repository->getDurationsGroupedBy($byActivity, 'activity'), 'No activity'), 'colors' => null, 'pick' => 'pie_activity'];
+            $taskSlices = $toPie($this->repository->getDurationsGroupedBy($byTask, 'task'), 'No task');
+            $activityName = null;
+            if ($activity !== null) {
+                foreach ($charts[1]['slices'] as $slice) {
+                    if ((int) ($slice['key'] ?? 0) === $activity) {
+                        $activityName = $slice['label'];
+                    }
+                }
+            }
+            // tasks can be picked as well; entries without a task are "No task"
+            foreach ($taskSlices as $index => $slice) {
+                $taskSlices[$index]['key'] = ($slice['key'] === null || $slice['key'] === '') ? \App\Repository\Query\TimesheetQuery::NO_TASK : $slice['key'];
+            }
+            $charts[] = ['title' => 'Hours by Task' . ($activityName !== null ? ' of ' . $activityName : $who), 'slices' => $taskSlices, 'colors' => null, 'pick' => 'pie_task'];
         }
 
         foreach ($charts as $index => $chart) {
@@ -547,7 +719,13 @@ final class TimesheetTeamController extends TimesheetAbstractController
             'show_team' => $showTeam,
             'export_teams' => $exportTeams,
             'charts' => $charts,
-            'export_form' => $this->isGranted('create_export') ? $this->createExportBoxForm()->createView() : null,
+            // the export box is not shown any more: the Export button above the list follows the dashboard
+            // 'export_form' => $this->isGranted('create_export') ? $this->createExportBoxForm()->createView() : null,
+            'export_form' => null,
+            // the person and activity picked under the charts
+            'pick_user' => $this->dashboardFilter['user']?->getId(),
+            'pick_activity' => $this->dashboardFilter['activity'],
+            'pick_task' => $this->dashboardFilter['task'],
         ];
     }
 

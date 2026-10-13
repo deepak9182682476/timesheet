@@ -71,8 +71,8 @@ final class AdminOnlyAreaSubscriber implements EventSubscriberInterface
             return;
         }
 
-        $systemOnly = $this->startsWithAny($route, self::SYSTEM_ADMIN_ONLY_ROUTE_PREFIXES);
-        $adminOnly = $this->startsWithAny($route, self::ADMIN_ONLY_ROUTE_PREFIXES);
+        $systemOnly = self::startsWithAny($route, self::SYSTEM_ADMIN_ONLY_ROUTE_PREFIXES);
+        $adminOnly = self::startsWithAny($route, self::ADMIN_ONLY_ROUTE_PREFIXES);
         if (!$systemOnly && !$adminOnly) {
             return;
         }
@@ -96,9 +96,21 @@ final class AdminOnlyAreaSubscriber implements EventSubscriberInterface
     }
 
     /**
+     * Whether the page behind $route is closed to $user (used to hide links to it as well).
+     */
+    public static function isClosedFor(string $route, User $user): bool
+    {
+        if ($user->isSuperAdmin()) {
+            return false;
+        }
+
+        return self::startsWithAny($route, self::SYSTEM_ADMIN_ONLY_ROUTE_PREFIXES) || self::startsWithAny($route, self::ADMIN_ONLY_ROUTE_PREFIXES);
+    }
+
+    /**
      * @param array<string> $prefixes
      */
-    private function startsWithAny(string $route, array $prefixes): bool
+    private static function startsWithAny(string $route, array $prefixes): bool
     {
         foreach ($prefixes as $prefix) {
             if (str_starts_with($route, $prefix)) {

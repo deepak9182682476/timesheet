@@ -114,6 +114,31 @@ final class AttendanceService
     }
 
     /**
+     * The people whose name, username or Employee ID contain every word of $search (as the search box on the page).
+     *
+     * @param array<User> $people
+     * @return array<User>
+     */
+    public function filterPeople(array $people, string $search): array
+    {
+        $words = preg_split('/\s+/', mb_strtolower(trim($search)), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($words === []) {
+            return $people;
+        }
+
+        return array_values(array_filter($people, static function (User $person) use ($words): bool {
+            $text = mb_strtolower($person->getDisplayName() . ' ' . $person->getUserIdentifier() . ' ' . $person->getAccountNumber());
+            foreach ($words as $word) {
+                if (!str_contains($text, $word)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }));
+    }
+
+    /**
      * @return array<int, bool> user ID => present, for those entered for that day
      */
     public function getDay(\DateTimeInterface $day): array

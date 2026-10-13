@@ -8,6 +8,9 @@
 {% set charts = summary.charts %}
 {% set exportForm = summary.export_form %}
 {% set single = charts|length == 1 %}
+{% set pickUser = summary.pick_user ?? null %}
+{% set pickActivity = summary.pick_activity ?? null %}
+{% set pickTask = summary.pick_task ?? null %}
 <div class="row row-cards mb-3 team-summary">
     <div class="{{ exportForm is not null ? (single ? 'col-lg-7' : 'col-xl-8') : 'col-12' }}">
         <div class="card h-100">
@@ -16,6 +19,11 @@
                 {# <div class="card-subtitle ms-2 text-secondary small">Follows the search filters of the list below</div> #}
                 {% if period is defined and period is not null %}
                     <div class="card-subtitle ms-2 text-secondary small">{{ period.week ? 'This week, ' : '' }}{{ period.begin|date('d-M-y') }} to {{ period.end|date('d-M-y') }}</div>
+                {% endif %}
+                {% if pickUser is not null or pickActivity is not null or pickTask is not null %}
+                    <div class="card-actions">
+                        <a href="#" class="btn btn-sm team-pie-clear"><i class="fas fa-times me-1"></i>Show Everybody</a>
+                    </div>
                 {% endif %}
             </div>
             <div class="card-body">
@@ -34,9 +42,27 @@
                                         <div class="team-pie-unit">hours</div>
                                     </div>
                                 </div>
-                                <div class="team-pie-legend" id="team-pie-legend-{{ loop.index }}"></div>
+                                {# the names are in the dropdown below the pie (people, activities, tasks): no legend there #}
+                                {% if chart.pick is not defined or chart.pick is null %}
+                                    <div class="team-pie-legend" id="team-pie-legend-{{ loop.index }}"></div>
+                                {% endif %}
                             {% else %}
                                 <div class="text-secondary text-center py-5">No hours yet.</div>
+                            {% endif %}
+                            {# pick a person (first chart) or an activity (second chart): the charts beside it and the list
+                               (and the Export button) follow; clicking a slice does the same #}
+                            {% if chart.pick is defined and chart.pick is not null %}
+                                {% set picked = chart.pick == 'pie_user' ? pickUser : (chart.pick == 'pie_activity' ? pickActivity : pickTask) %}
+                                <div class="mt-3 px-3">
+                                    <select class="form-select form-select-sm team-pie-pick" data-param="{{ chart.pick }}">
+                                        <option value="{{ chart.pick == 'pie_task' ? '' : '0' }}">{{ chart.pick == 'pie_user' ? 'All people' : (chart.pick == 'pie_activity' ? 'All activities' : 'All tasks') }}</option>
+                                        {% for slice in chart.slices %}
+                                            {% if slice.key is not null %}
+                                                <option value="{{ slice.key }}" {% if picked is not null and slice.key ~ '' == picked ~ '' %}selected{% endif %}>{{ slice.label }}</option>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </select>
+                                </div>
                             {% endif %}
                         </div>
                     {% endfor %}
@@ -108,6 +134,35 @@
             return Math.floor(minutes / 60) + ':' + ('0' + (minutes % 60)).slice(-2);
         }
 
+        /* a person or an activity picked: the page reloads with it (the list and the Export button follow) */
+        function pick(param, value) {
+            var url = new URL(window.location.href);
+            url.searchParams.set(param, String(value));
+            if (param === 'pie_user') { url.searchParams.delete('pie_activity'); url.searchParams.delete('pie_task'); }
+            if (param === 'pie_activity') { url.searchParams.delete('pie_task'); }
+            window.location.href = url.toString();
+        }
+        document.querySelectorAll('.team-pie-pick').forEach(function (select) {
+            select.addEventListener('change', function () { pick(select.dataset.param, select.value); });
+        });
+        document.querySelectorAll('.team-pie-clear').forEach(function (link) {
+            link.addEventListener('click', function (event) {
+                event.preventDefault();
+                var url = new URL(window.location.href);
+                url.searchParams.set('pie_user', '0');
+                url.searchParams.set('pie_activity', '0');
+                url.searchParams.set('pie_task', '');
+                window.location.href = url.toString();
+            });
+        });
+        var picked = {pie_user: {{ pickUser|json_encode|raw }}, pie_activity: {{ pickActivity|json_encode|raw }}, pie_task: {{ pickTask|json_encode|raw }}};
+        /* the picked slice of a chart, if any */
+        function pickedIndex(chart, slices) {
+            if (!chart.pick || picked[chart.pick] === null || picked[chart.pick] === undefined) { return -1; }
+            for (var i = 0; i < slices.length; i++) { if (String(slices[i].key) === String(picked[chart.pick])) { return i; } }
+            return -1;
+        }
+
         function paint() {
             if (typeof Chart === 'undefined') { return; }
             charts.forEach(function (chart, index) {
@@ -120,6 +175,13 @@
                     slices = slices.slice(0, 9).concat([{label: 'Others', seconds: rest}]);
                 }
                 var colors = chart.colors !== null ? chart.colors : slices.map(function (slice, i) { return palette[i % palette.length]; });
+                // a picked person / activity / task: the others are greyed out, the middle shows the picked one's hours
+                var chosen = pickedIndex(chart, slices);
+                var shownTotal = chart.total;
+                if (chosen !== -1) {
+                    colors = colors.map(function (color, i) { return i === chosen ? color : '#dfe3e8'; });
+                    shownTotal = slices[chosen].seconds;
+                }
                 // the total, in the exact middle of the ring, sized to the hole
                 var centerTotal = {
                     id: 'centerTotal',
@@ -135,7 +197,8 @@
                         ctx.textBaseline = 'middle';
                         ctx.fillStyle = style.color || '#1d273b';
                         ctx.font = '700 ' + size + 'px ' + family;
-                        ctx.fillText(hours(chart.total), arc.x, arc.y - size * 0.3);
+                        // ctx.fillText(hours(chart.total), arc.x, arc.y - size * 0.3);
+                        ctx.fillText(hours(shownTotal), arc.x, arc.y - size * 0.3);
                         ctx.fillStyle = '#667382';
                         ctx.font = Math.round(size * 0.5) + 'px ' + family;
                         ctx.fillText('hours', arc.x, arc.y + size * 0.6);
@@ -153,13 +216,24 @@
                             seconds: slices.map(function (slice) { return slice.seconds; }),
                             backgroundColor: colors,
                             borderColor: '#fff',
-                            borderWidth: 2
+                            borderWidth: 2,
+                            // the picked person or activity stands out of the ring
+                            offset: slices.map(function (slice, i) { return i === chosen ? 10 : 0; })
                         }]
                     },
                     options: {
                         maintainAspectRatio: false,
                         responsive: true,
                         cutout: '62%',
+                        // a click on a person or an activity picks it
+                        onClick: function (event, elements) {
+                            if (!chart.pick || elements.length === 0) { return; }
+                            var slice = slices[elements[0].index];
+                            if (slice && slice.key !== undefined && slice.key !== null) { pick(chart.pick, slice.key); }
+                        },
+                        onHover: function (event, elements) {
+                            event.native.target.style.cursor = chart.pick && elements.length > 0 ? 'pointer' : 'default';
+                        },
                         plugins: {
                             // legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10 } },
                             // the legend is drawn below the chart (team-pie-legend), so it does not shrink the ring

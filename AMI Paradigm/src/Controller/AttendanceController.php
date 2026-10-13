@@ -150,9 +150,20 @@ final class AttendanceController extends AbstractController
             $to = $from->modify('+' . (AttendanceUpload::MAX_EXPORT_DAYS - 1) . ' days');
         }
 
-        $response = new BinaryFileResponse($this->upload->createExport($from, $to));
+        // the search box of the page: only the people it finds (empty: everybody)
+        $search = mb_substr(trim((string) $request->query->get('q', '')), 0, 100);
+        $response = new BinaryFileResponse($this->upload->createExport($from, $to, $search));
         $response->headers->set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_ATTACHMENT, 'attendance-' . $from->format('Y-m-d') . '-to-' . $to->format('Y-m-d') . '.xlsx');
+        // $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_ATTACHMENT, 'attendance-' . $from->format('Y-m-d') . '-to-' . $to->format('Y-m-d') . '.xlsx');
+        // the file is named after the person when the search found exactly one
+        $name = 'attendance-';
+        $found = $search !== '' ? $this->attendance->filterPeople($this->attendance->getPeople(), $search) : [];
+        if (\count($found) === 1) {
+            $person = $found[0];
+            $label = trim(preg_replace('/[^A-Za-z0-9]+/', '-', $person->getDisplayName()) ?? '', '-');
+            $name .= ($label !== '' ? $label : 'user') . ($person->getAccountNumber() ? '-' . $person->getAccountNumber() : '') . '-';
+        }
+        $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_ATTACHMENT, $name . $from->format('Y-m-d') . '-to-' . $to->format('Y-m-d') . '.xlsx');
         $response->deleteFileAfterSend(true);
 
         return $response;

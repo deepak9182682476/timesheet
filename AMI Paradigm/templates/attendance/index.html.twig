@@ -99,23 +99,7 @@
         #}
     </form>
 
-    <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Export Attendance</h3></div>
-        <div class="card-body">
-            <div class="text-secondary small mb-2">An Excel file with every person for every day (Yes / No / Not entered), and a summary per person.</div>
-            <div class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
-                <a href="{{ path('attendance_export', {'period': 'week'}) }}" class="btn"><i class="fas fa-download me-2"></i>This Week</a>
-                <a href="{{ path('attendance_export', {'period': 'month'}) }}" class="btn"><i class="fas fa-download me-2"></i>This Month</a>
-                <span class="text-secondary mx-2 mb-2">or</span>
-                <form method="get" action="{{ path('attendance_export') }}" class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
-                    <div><label class="form-label small mb-1" for="exp-from">From</label><input type="date" class="form-control" name="from" id="exp-from" value="{{ day|date('Y-m-01') }}" required></div>
-                    <div><label class="form-label small mb-1" for="exp-to">To</label><input type="date" class="form-control" name="to" id="exp-to" value="{{ day|date('Y-m-d') }}" required></div>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-file-excel me-2"></i>Export</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
+    {# Bulk Upload first, Export Attendance below it #}
     <div class="card mb-3">
         <div class="card-header"><h3 class="card-title">Bulk Upload</h3></div>
         <div class="card-body">
@@ -147,6 +131,26 @@
         </div>
     </div>
 
+    <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title">Export Attendance</h3></div>
+        <div class="card-body">
+            <div class="text-secondary small mb-2">An Excel file with every person for every day (Yes / No / Not entered), and a summary per person.</div>
+            {# the export follows the search box at the top: only the people it finds #}
+            <div class="small mb-2 d-none" id="attendance-export-scope"><span class="badge bg-blue-lt"></span></div>
+            <div class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
+                <a href="{{ path('attendance_export', {'period': 'week'}) }}" class="btn attendance-export-link"><i class="fas fa-download me-2"></i>This Week</a>
+                <a href="{{ path('attendance_export', {'period': 'month'}) }}" class="btn attendance-export-link"><i class="fas fa-download me-2"></i>This Month</a>
+                <span class="text-secondary mx-2 mb-2">or</span>
+                <form method="get" action="{{ path('attendance_export') }}" class="d-flex align-items-end flex-wrap" style="gap: .5rem;">
+                    <div><label class="form-label small mb-1" for="exp-from">From</label><input type="date" class="form-control" name="from" id="exp-from" value="{{ day|date('Y-m-01') }}" required></div>
+                    <div><label class="form-label small mb-1" for="exp-to">To</label><input type="date" class="form-control" name="to" id="exp-to" value="{{ day|date('Y-m-d') }}" required></div>
+                    <input type="hidden" name="q" value="" class="attendance-export-q">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-file-excel me-2"></i>Export</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <style>
         .btn-check.attendance-yes:checked + .btn { background-color: var(--tblr-green, #2fb344); border-color: var(--tblr-green, #2fb344); color: #fff; }
         .btn-check.attendance-no:checked + .btn { background-color: var(--tblr-red, #d63939); border-color: var(--tblr-red, #d63939); color: #fff; }
@@ -171,7 +175,23 @@
                     var text = row.dataset.search || '';
                     row.style.display = words.every(function (w) { return text.indexOf(w) !== -1; }) ? '' : 'none';
                 });
+                exportScope();
             });
+            // Export follows the search: only the people found, or everybody when the search is empty
+            function exportScope() {
+                var term = search.value.trim();
+                document.querySelectorAll('.attendance-export-link').forEach(function (link) {
+                    var url = new URL(link.href, window.location.href);
+                    if (term !== '') { url.searchParams.set('q', term); } else { url.searchParams.delete('q'); }
+                    link.href = url.toString();
+                });
+                document.querySelectorAll('.attendance-export-q').forEach(function (input) { input.value = term; });
+                var shown = document.querySelectorAll('.attendance-row:not([style*="display: none"])').length;
+                var scope = document.getElementById('attendance-export-scope');
+                scope.classList.toggle('d-none', term === '');
+                scope.firstElementChild.textContent = 'Only the ' + shown + (shown === 1 ? ' person' : ' people') + ' matching "' + term + '" will be exported. Clear the search to export everybody.';
+            }
+            exportScope();
             document.getElementById('attendance-clear').addEventListener('click', function () { document.getElementById('attendance-form').reset(); });
         })();
     </script>

@@ -35,6 +35,7 @@ final class TeamMappingController extends AbstractController
         private readonly TeamMappingService $teams,
         private readonly EntityManagerInterface $entityManager,
         private readonly RequestStack $requestStack,
+        private readonly \App\Team\AllocationService $allocations,
     ) {
     }
 
@@ -79,6 +80,14 @@ final class TeamMappingController extends AbstractController
             }
         }
 
+        // allocation ID and periods (Allocation No. 1, 2 ...) of every person on every project of the team
+        $linkedProjects = [];
+        $allProjects = $this->teams->getProjects();
+        foreach ($linked as $projectId) {
+            $linkedProjects[$projectId] = $allProjects[$projectId] ?? ('#' . $projectId);
+        }
+        $allocations = $this->allocations->getAllocations($linked, array_map(static fn ($m) => (int) $m->getUser()->getId(), $members));
+
         $session = $request->getSession();
         $notice = $session->get(self::NOTICE);
         $session->remove(self::NOTICE);
@@ -102,6 +111,8 @@ final class TeamMappingController extends AbstractController
             'people' => $this->teams->getPeople(),
             'roles' => $this->teams->getRoles(),
             'token' => self::TOKEN,
+            'linked_projects' => $linkedProjects,
+            'allocations' => $allocations,
         ]);
     }
 
@@ -186,10 +197,104 @@ final class TeamMappingController extends AbstractController
             $lead = true;
             $this->flashWarning($person->getDisplayName() . ' stays lead: a team needs at least one lead.');
         }
+        // somebody new on the team: the allocation dates (from and to) are needed for each project of the team
+        $isNew = true;
+        foreach ($team->getMembers() as $member) {
+            if ($member->getUser()?->getId() === $person->getId()) {
+                $isNew = false;
+            }
+        }
+        $from = (string) $request->request->get('alloc_from', '');
+        $to = (string) $request->request->get('alloc_to', '');
+        $projects = $this->linkedProjects($team);
+        if ($isNew && $projects !== []) {
+            $dates = $this->teams->getProjectDates();
+            foreach ($projects as $projectId => $projectName) {
+                $problem = $this->allocations->check($projectId, $projectName, $dates[$projectId] ?? ['start' => null, 'end' => null], (int) $person->getId(), $from, $to);
+                if ($problem !== null) {
+                    $this->flashError($person->getDisplayName() . ' is not added. ' . $problem);
+
+                    return $this->redirectToRoute('team_mapping', ['team' => $id]);
+                }
+            }
+        }
+
         $this->teams->saveMember($team, $person, $this->roles($request, 'role'), $lead);
-        $this->flashInfo($person->getDisplayName() . ' is saved in team "' . $team->getName() . '".');
+        $added = [];
+        if ($isNew) {
+            foreach ($projects as $projectId => $projectName) {
+                $period = $this->allocations->addPeriod($projectId, (int) $person->getId(), $from, $to, $this->getUser());
+                $added[] = $projectName . ': ' . $period['code'] . ' Allocation No. ' . $period['number'];
+            }
+        }
+        $this->flashInfo($person->getDisplayName() . ' is saved in team "' . $team->getName() . '".' . ($added !== [] ? ' ' . implode(', ', $added) . '.' : ''));
 
         return $this->redirectToRoute('team_mapping', ['team' => $id]);
+    }
+
+    /**
+     * Another period on a project (the next Allocation No. of the person's allocation).
+     */
+    #[Route(path: '/{id}/allocation', name: 'team_mapping_allocation', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function allocation(int $id, Request $request): Response
+    {
+        $team = $this->load($id);
+        if (!$this->validToken($request)) {
+            return $this->redirectToRoute('team_mapping', ['team' => $id]);
+        }
+        $person = $this->entityManager->find(User::class, $request->request->getInt('user'));
+        $projectId = $request->request->getInt('project');
+        $projects = $this->linkedProjects($team);
+        $inTeam = false;
+        foreach ($team->getMembers() as $member) {
+            if ($person !== null && $member->getUser()?->getId() === $person->getId()) {
+                $inTeam = true;
+            }
+        }
+        if ($person === null || !$inTeam || !isset($projects[$projectId])) {
+            $this->flashError('Choose the person and the project of this team.');
+
+            return $this->redirectToRoute('team_mapping', ['team' => $id]);
+        }
+        $from = (string) $request->request->get('alloc_from', '');
+        $to = (string) $request->request->get('alloc_to', '');
+        $dates = $this->teams->getProjectDates();
+        $problem = $this->allocations->check($projectId, $projects[$projectId], $dates[$projectId] ?? ['start' => null, 'end' => null], (int) $person->getId(), $from, $to);
+        if ($problem !== null) {
+            $this->flashError($problem);
+        } else {
+            $period = $this->allocations->addPeriod($projectId, (int) $person->getId(), $from, $to, $this->getUser());
+            $this->flashInfo($person->getDisplayName() . ' on ' . $projects[$projectId] . ': ' . $period['code'] . ' Allocation No. ' . $period['number'] . ' is saved.');
+        }
+
+        return $this->redirectToRoute('team_mapping', ['team' => $id]);
+    }
+
+    #[Route(path: '/{id}/allocation/{period}/remove', name: 'team_mapping_allocation_remove', requirements: ['id' => '\d+', 'period' => '\d+'], methods: ['POST'])]
+    public function removeAllocation(int $id, int $period, Request $request): Response
+    {
+        $team = $this->load($id);
+        if ($this->validToken($request)) {
+            $removed = $this->allocations->removePeriod($period, array_keys($this->linkedProjects($team)));
+            if ($removed !== null) {
+                $this->flashInfo($removed['code'] . ' Allocation No. ' . $removed['number'] . ' is removed.');
+            }
+        }
+
+        return $this->redirectToRoute('team_mapping', ['team' => $id]);
+    }
+
+    /**
+     * @return array<int, string> the team's projects, name keyed by ID
+     */
+    private function linkedProjects(Team $team): array
+    {
+        $projects = [];
+        foreach ($team->getProjects() as $project) {
+            $projects[(int) $project->getId()] = (string) $project->getName();
+        }
+
+        return $projects;
     }
 
     #[Route(path: '/{id}/member/{user}/remove', name: 'team_mapping_member_remove', requirements: ['id' => '\d+', 'user' => '\d+'], methods: ['POST'])]

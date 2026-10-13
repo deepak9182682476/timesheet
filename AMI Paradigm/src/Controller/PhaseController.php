@@ -53,7 +53,7 @@ final class PhaseController extends AbstractController
         ksort($tasks, SORT_NATURAL | SORT_FLAG_CASE);
 
         return $this->render('phases/index.html.twig', [
-            'page_setup' => new PageSetup('Categories'),
+            'page_setup' => new PageSetup('Non Project Categories'),
             'groups' => $groups,
             'tasks' => $tasks,
         ]);
@@ -157,7 +157,7 @@ final class PhaseController extends AbstractController
         }
 
         return $this->render('phases/edit-task.html.twig', [
-            'page_setup' => new PageSetup('Categories'),
+            'page_setup' => new PageSetup('Non Project Categories'),
             'task' => $task,
             'form' => $form->createView(),
         ]);
@@ -191,7 +191,7 @@ final class PhaseController extends AbstractController
         }
 
         return $this->render('phases/edit.html.twig', [
-            'page_setup' => new PageSetup('Categories'),
+            'page_setup' => new PageSetup('Non Project Categories'),
             'phase' => $phase,
             'form' => $form->createView(),
         ]);

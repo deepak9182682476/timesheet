@@ -13,6 +13,7 @@ use App\Entity\User;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Reader\XLSX\Reader;
+use OpenSpout\Writer\AutoFilter;
 use OpenSpout\Writer\XLSX\Writer;
 
 /**
@@ -45,6 +46,7 @@ final class AttendanceUpload
             $sheet->setColumnWidth($width, $index + 1);
         }
         $writer->addRow(Row::fromValues(self::HEADERS, $bold));
+        $rows = 1;
         for ($day = $from; $day <= $to; $day = $day->modify('+1 day')) {
             $entered = $this->attendance->getDay($day);
             foreach ($people as $person) {
@@ -58,6 +60,7 @@ final class AttendanceUpload
                     $person->getDisplayName(),
                     $value === null ? '' : ($value ? 'Yes' : 'No'),
                 ]));
+                ++$rows;
             }
         }
 
@@ -80,7 +83,36 @@ final class AttendanceUpload
         $writer->setCurrentSheet($sheet);
         $writer->close();
 
+        // a Yes / No dropdown in every "Present" cell
+        $this->addYesNoDropdown($file, 'D2:D' . max(2, $rows));
+
         return $file;
+    }
+
+    /**
+     * OpenSpout cannot write a dropdown (data validation), so it is added to the first sheet afterwards.
+     */
+    private function addYesNoDropdown(string $file, string $range): void
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($file) !== true) {
+            return;
+        }
+        $name = 'xl/worksheets/sheet1.xml';
+        $xml = $zip->getFromName($name);
+        if ($xml !== false && !str_contains($xml, '<dataValidations')) {
+            $validation = '<dataValidations count="1"><dataValidation type="list" allowBlank="1" showDropDown="0" showInputMessage="1" showErrorMessage="1"'
+                . ' errorTitle="Yes or No" error="Please pick Yes or No." promptTitle="Present" prompt="Pick Yes or No."'
+                . ' sqref="' . $range . '"><formula1>"Yes,No"</formula1></dataValidation></dataValidations>';
+            // it belongs right after the cells, before these parts (when there)
+            if (preg_match('#<(hyperlinks|printOptions|pageMargins|pageSetup|headerFooter|drawing|legacyDrawing|tableParts|extLst)[\s>/]#', $xml, $match, PREG_OFFSET_CAPTURE)) {
+                $xml = substr_replace($xml, $validation, $match[0][1], 0);
+            } else {
+                $xml = str_replace('</worksheet>', $validation . '</worksheet>', $xml);
+            }
+            $zip->addFromString($name, $xml);
+        }
+        $zip->close();
     }
 
     /** the longest period of one export */
@@ -89,11 +121,12 @@ final class AttendanceUpload
     /**
      * The attendance from $from to $to: one row per person and day (Yes / No / Not entered), and a summary per person.
      */
-    public function createExport(\DateTimeImmutable $from, \DateTimeImmutable $to): string
+    public function createExport(\DateTimeImmutable $from, \DateTimeImmutable $to, string $search = ''): string
     {
         $file = tempnam(sys_get_temp_dir(), 'attendance-export-') . '.xlsx';
         $bold = (new Style())->setFontBold();
-        $people = $this->attendance->getPeople();
+        // everybody, or only the people found by the search box on the page
+        $people = $this->attendance->filterPeople($this->attendance->getPeople(), $search);
         $entered = $this->attendance->getRange($from, $to);
 
         $writer = new Writer();
@@ -103,6 +136,11 @@ final class AttendanceUpload
         foreach ([14, 12, 16, 30, 16] as $index => $width) {
             $sheet->setColumnWidth($width, $index + 1);
         }
+        // filter buttons on every column (Date, Day, Employee ID, Name, Present)
+        $lastRow = 1 + ($from->diff($to)->days + 1) * \count($people);
+        $sheet->setAutoFilter(new AutoFilter(0, 1, 4, max(2, $lastRow)));
+        // not frozen: OpenSpout's SheetView writes an attribute Excel does not know (showZeroes)
+        // $sheet->setSheetView((new SheetView())->setFreezeRow(2));
         $writer->addRow(Row::fromValues(['Date', 'Day', 'Employee ID', 'Name', 'Present'], $bold));
 
         $totals = [];
@@ -122,7 +160,9 @@ final class AttendanceUpload
         foreach ([16, 30, 12, 14, 14] as $index => $width) {
             $summary->setColumnWidth($width, $index + 1);
         }
-        $writer->addRow(Row::fromValues(['Attendance from ' . $from->format('d-M-y') . ' to ' . $to->format('d-M-y')], $bold));
+        // filter buttons on the column names (row 2)
+        $summary->setAutoFilter(new AutoFilter(0, 2, 4, max(3, 2 + \count($people))));
+        $writer->addRow(Row::fromValues(['Attendance from ' . $from->format('d-M-y') . ' to ' . $to->format('d-M-y') . (trim($search) !== '' ? ' (search: ' . trim($search) . ')' : '')], $bold));
         $writer->addRow(Row::fromValues(['Employee ID', 'Name', 'Present', 'Not present', 'Not entered'], $bold));
         foreach ($people as $person) {
             $id = (int) $person->getId();

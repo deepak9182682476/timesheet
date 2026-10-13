@@ -37,6 +37,9 @@ class TimesheetQuery extends ActivityQuery implements BillableInterface, DateRan
     private int $exported = self::STATE_ALL;
     /** Value of the "Status" custom field to filter by (In progress / Completed), null for all */
     private ?string $workStatus = null;
+    /** Value of the "Task" custom field to filter by (Team Dashboard), NO_TASK for entries without a task, null for all */
+    private ?string $taskName = null;
+    public const NO_TASK = '__none__';
     private ?int $maxResults = null;
     private ?\DateTimeInterface $modifiedAfter = null;
     /**
@@ -201,6 +204,16 @@ class TimesheetQuery extends ActivityQuery implements BillableInterface, DateRan
         }
 
         return $this;
+    }
+
+    public function getTaskName(): ?string
+    {
+        return $this->taskName;
+    }
+
+    public function setTaskName(?string $taskName): void
+    {
+        $this->taskName = ($taskName === '' ? null : $taskName);
     }
 
     public function getWorkStatus(): ?string

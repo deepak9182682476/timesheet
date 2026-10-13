@@ -155,7 +155,12 @@ abstract class TimesheetAbstractController extends AbstractController
         // who is in the list (Team Dashboard: the whole team), without showing up as a search filter
         $listQuery = $this->scopeQuery($listQuery);
 
+        // Team Dashboard: a person and an activity picked under the charts (or by clicking a slice)
+        $this->readDashboardFilter($request, $view . '|' . ($chosenProjectId ?? 0));
+
         $summary = $this->getListSummary($listQuery, $view, $chosenProject);
+        // the entries below the charts follow that pick as well
+        $listQuery = $this->applyDashboardFilter($listQuery);
 
         // With charts above the list, the entries are only shown after "View All Entries" (per tab and project).
         $showEntries = true;
@@ -304,6 +309,29 @@ abstract class TimesheetAbstractController extends AbstractController
     protected function getDashboardPeriod(Request $request, string $context = ''): ?array
     {
         return null;
+    }
+
+    /**
+     * Reads a person and an activity picked on a dashboard (nothing by default), see TimesheetTeamController.
+     */
+    protected function readDashboardFilter(Request $request, string $context): void
+    {
+    }
+
+    /**
+     * Narrows a query to the person and activity picked on a dashboard (nothing by default).
+     */
+    protected function applyDashboardFilter(TimesheetQuery $query): TimesheetQuery
+    {
+        return $query;
+    }
+
+    /**
+     * Narrows an export to what a dashboard shows (nothing by default), see TimesheetTeamController.
+     */
+    protected function scopeDashboardExport(Request $request, TimesheetQuery $listQuery, TimesheetQuery $query, string $view): TimesheetQuery
+    {
+        return $listQuery;
     }
 
     /**
@@ -539,7 +567,10 @@ abstract class TimesheetAbstractController extends AbstractController
             $listQuery->setProjects($wanted !== [] ? $wanted : [0]);
         }
 
+        // Team Dashboard: the export follows what the dashboard shows (project, date range, picked person and activity)
+        $listQuery = $this->scopeDashboardExport($request, $listQuery, $query, $view);
         $listQuery = $this->scopeQuery($listQuery);
+        $listQuery = $this->applyDashboardFilter($listQuery);
         $entries = $this->repository->getTimesheetResult($listQuery);
         $results = $entries->getResults();
 

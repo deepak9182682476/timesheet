@@ -747,6 +747,18 @@ class TimesheetRepository extends EntityRepository
             $qb->andWhere('t.exported = :exported')->setParameter('exported', false, Types::BOOLEAN);
         }
 
+        // "Task" custom field (Team Dashboard): one task, or the entries without a task
+        if (null !== ($taskName = $query->getTaskName())) {
+            if ($taskName === TimesheetQuery::NO_TASK) {
+                $hasTask = 'SELECT 1 FROM ' . TimesheetMeta::class . ' tk WHERE tk.timesheet = t.id AND tk.name = :tk_name AND tk.value IS NOT NULL AND tk.value <> \'\'';
+                $qb->andWhere($qb->expr()->not($qb->expr()->exists($hasTask)));
+            } else {
+                $hasTask = 'SELECT 1 FROM ' . TimesheetMeta::class . ' tk WHERE tk.timesheet = t.id AND tk.name = :tk_name AND tk.value = :tk_value';
+                $qb->andWhere($qb->expr()->exists($hasTask))->setParameter('tk_value', $taskName);
+            }
+            $qb->setParameter('tk_name', \App\Entity\Task::TIMESHEET_META_FIELD);
+        }
+
         // "Status" custom field: an entry that never got a status counts as "In progress"
         if (null !== ($workStatus = $query->getWorkStatus())) {
             $hasStatus = 'SELECT 1 FROM ' . TimesheetMeta::class . ' ws WHERE ws.timesheet = t.id AND ws.name = :ws_name AND ws.value = :ws_value';
