@@ -45,7 +45,8 @@
                         {% endfor %}
                         {# {% set weekEvents = week_events(days) %} #}
                         {% for id, week in days %}
-                        <th class="text-center{% if week.day is weekend %} weekend{% endif %}{% if week.day is today %} today{% endif %}">
+                        {# future days (tomorrow and later) cannot be entered: marked here, their boxes are read-only (script below) #}
+                        <th class="text-center{% if week.day is weekend %} weekend{% endif %}{% if week.day is today %} today{% endif %}{% if week.day|date('Y-m-d') > 'now'|date('Y-m-d') %} qe-future{% endif %}" data-qe-day="{{ loop.index0 }}"{% if week.day|date('Y-m-d') > 'now'|date('Y-m-d') %} title="Future day: time can be entered up to today"{% endif %}>
 {# events on top of the day are shown on Calendar Entry instead (were here):
                             { # events of that day on top: activity (green, its hours are logged) and information (orange); details on mouse-over # }
                             {% for item in weekEvents[week.day|date_format('Y-m-d')] ?? [] %}
@@ -92,9 +93,33 @@
         /* events on top of a day: activity green, information orange */
         .qe-event { font-size: .7rem; font-weight: 600; text-transform: none; letter-spacing: 0; border-radius: 3px; padding: 1px 4px; margin-bottom: 3px; max-width: 8rem; margin-left: auto; margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
         .qe-event-activity { background: var(--tblr-green-lt, #d5f0da); color: var(--tblr-green, #2fb344); }
+        form[name=quick_entry_form] th.qe-future { color: var(--tblr-secondary, #667382); }
+        form[name=quick_entry_form] input.qe-future-input { background-color: var(--tblr-bg-surface-secondary, #f1f3f5); color: var(--tblr-secondary, #667382); cursor: not-allowed; }
         .qe-event-information { background: var(--tblr-orange-lt, #fde1cd); color: var(--tblr-orange, #f76707); }
     </style>
     <script>
+        // no time for future days: the boxes of tomorrow and later are read-only (saving them is refused on the server too)
+        (function () {
+            function lockFuture() {
+                document.querySelectorAll('form[name=quick_entry_form] th.qe-future[data-qe-day]').forEach(function (th) {
+                    var day = th.dataset.qeDay;
+                    document.querySelectorAll('form[name=quick_entry_form] [id*="_timesheets_' + day + '_"]').forEach(function (input) {
+                        if (input.tagName !== 'INPUT' || input.type === 'hidden') { return; }
+                        input.readOnly = true;
+                        input.tabIndex = -1;
+                        input.classList.add('qe-future-input');
+                        input.title = 'Future day: time can be entered up to today';
+                    });
+                });
+            }
+            document.addEventListener('DOMContentLoaded', lockFuture);
+            document.addEventListener('kimai.initialized', lockFuture);
+            // rows added with "add row" get their boxes later
+            document.addEventListener('DOMContentLoaded', function () {
+                var form = document.querySelector('form[name=quick_entry_form]');
+                if (form) { new MutationObserver(lockFuture).observe(form, {childList: true, subtree: true}); }
+            });
+        })();
         document.addEventListener('kimai.initialized', function(event) {
             const kimai = event.detail.kimai;
             const DATES = kimai.getPlugin('date');

@@ -49,6 +49,28 @@ final class TimesheetWeeklyCutoffValidator extends ConstraintValidator
         }
         $owner = $value->getUser() ?? $actor;
 
+        // no time for future days (tomorrow and later), for everybody: only the new date counts,
+        // so an entry already on a future day can still be moved back or deleted
+        $future = $this->cutoff->getFutureMessage($owner, $value->getBegin());
+        // an entry that was already on that future day and is not being changed (for example the other rows of
+        // Bulk Entry (Week)) does not stop the rest from being saved
+        if ($future !== null && $value->getId() !== null) {
+            $original = $this->entityManager->getUnitOfWork()->getOriginalEntityData($value);
+            $sameDay = ($original['begin'] ?? null) instanceof \DateTimeInterface
+                && $original['begin']->format('Y-m-d H:i') === $value->getBegin()->format('Y-m-d H:i');
+            if ($sameDay && (int) ($original['duration'] ?? -1) === (int) $value->getDuration()) {
+                $future = null;
+            }
+        }
+        if ($future !== null) {
+            $this->context->buildViolation($future)
+                ->atPath('begin_date')
+                ->setCode(TimesheetWeeklyCutoff::CUTOFF_ERROR)
+                ->addViolation();
+
+            return;
+        }
+
         // the new date, and for a change also the date the entry had before (an old entry cannot be moved out of a closed week)
         $days = [$value->getBegin()];
         if ($value->getId() !== null) {

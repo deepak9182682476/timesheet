@@ -9,7 +9,10 @@
 {% set extra = additional_hours_notifications() %}
 {# {% set notificationCount = leaveRequests|length + newTasks|length %} #}
 {# {% set notificationCount = leaveRequests|length + newTasks|length + extra.pending|length + extra.hours|length + extra.leave|length %} #}
-{% set notificationCount = leaveRequests|length + newTasks|length + extra.pending|length + extra.hours|length + extra.leave|length + extra.wfh_pending|length + extra.wfh|length %}
+{# {% set notificationCount = leaveRequests|length + newTasks|length + extra.pending|length + extra.hours|length + extra.leave|length + extra.wfh_pending|length + extra.wfh|length %} #}
+{# reminders on the last day to enter time (gone after 11:59 PM by themselves, see TimesheetReminderService) #}
+{% set reminders = timesheet_reminders() %}
+{% set notificationCount = leaveRequests|length + newTasks|length + extra.pending|length + extra.hours|length + extra.leave|length + extra.wfh_pending|length + extra.wfh|length + reminders.count %}
 <div class="nav-item dropdown d-flex me-1 leave-notifications">
     <a href="#" class="btn btn-icon px-0 position-relative" data-bs-toggle="dropdown" data-bs-auto-close="outside" role="button" aria-expanded="false"
        title="Notifications" aria-label="Notifications{% if notificationCount > 0 %}: {{ notificationCount }} new{% endif %}">
@@ -27,6 +30,26 @@
                 <div class="card-body text-secondary">No new notifications.</div>
             {% else %}
                 <div class="list-group list-group-flush list-group-hoverable">
+                    {% if reminders.own is not null %}
+                        <a href="{{ path('quick_entry', {'date': reminders.own.from|date('Y-m-d')}) }}" class="list-group-item list-group-item-action timesheet-reminder-item">
+                            <div class="fw-bold text-danger"><i class="fas fa-clock me-1"></i>Enter last week's timesheet today</div>
+                            <div class="text-secondary small">
+                                {{ reminders.own.from|date('d-M-y') }} to {{ reminders.own.to|date('d-M-y') }} &middot; closes tonight, {{ reminders.own.deadline|date('D d-M-y') }} 11:59 PM
+                            </div>
+                            <div class="small">Missing: {{ reminders.own.days|join(', ') }}</div>
+                        </a>
+                    {% endif %}
+                    {% if reminders.team is not null %}
+                        {% for person in reminders.team.people %}
+                            <a href="{{ path('quick_entry', {'date': reminders.team.from|date('Y-m-d'), 'user': person.user.id}) }}" class="list-group-item list-group-item-action timesheet-reminder-item">
+                                <div class="fw-bold text-danger"><i class="fas fa-clock me-1"></i>{{ person.user.displayName }}'s timesheet is incomplete</div>
+                                <div class="text-secondary small">
+                                    {{ reminders.team.from|date('d-M-y') }} to {{ reminders.team.to|date('d-M-y') }} &middot; you can enter it until tonight, {{ reminders.team.deadline|date('D d-M-y') }} 11:59 PM
+                                </div>
+                                <div class="small">Missing: {{ person.days|join(', ') }}</div>
+                            </a>
+                        {% endfor %}
+                    {% endif %}
                     {% for item in extra.hours %}
                         <a href="{{ path('additional_hours') }}" class="list-group-item list-group-item-action">
                             <div class="fw-bold">Your extra hours claim was <span class="{{ item.approved ? 'text-success' : 'text-danger' }}">{{ item.status }}</span></div>

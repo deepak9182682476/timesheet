@@ -1,0 +1,77 @@
+{#
+    Pop-up on the last day to enter time (see TimesheetReminderService): the person's own last week, and for a lead
+    or manager their people's week that closes tonight. Shown once per browser session and day; the same reminders
+    stay in the notification bell until 11:59 PM, then they are gone by themselves.
+#}
+{% set reminders = timesheet_reminders() %}
+{% if reminders.count > 0 %}
+    {% set key = 'ami-timesheet-reminder-' ~ 'now'|date('Y-m-d') %}
+    <div class="modal modal-blur fade" id="timesheet-reminder-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-status bg-danger"></div>
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-clock text-danger me-2"></i>Timesheet Due Tonight</h5>
+                    <button type="button" class="btn-close timesheet-reminder-close" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% if reminders.own is not null %}
+                        <p class="mb-2">
+                            Your timesheet for <strong>{{ reminders.own.from|date('d-M-y') }} to {{ reminders.own.to|date('d-M-y') }}</strong> is incomplete.
+                            Please enter it now: it closes tonight, <strong>{{ reminders.own.deadline|date('D d-M-y') }}, 11:59 PM</strong>.
+                            After that only your manager can enter it.
+                        </p>
+                        <div class="small mb-3"><span class="text-secondary">Missing:</span> {{ reminders.own.days|join(', ') }}</div>
+                        <a href="{{ path('quick_entry', {'date': reminders.own.from|date('Y-m-d')}) }}" class="btn btn-primary w-100 mb-2">Enter Last Week's Timesheet</a>
+                    {% endif %}
+                    {% if reminders.team is not null %}
+                        {% if reminders.own is not null %}<hr class="my-3">{% endif %}
+                        <p class="mb-2">
+                            These people have not entered their timesheet for <strong>{{ reminders.team.from|date('d-M-y') }} to {{ reminders.team.to|date('d-M-y') }}</strong>.
+                            You can still enter it for them until tonight, <strong>{{ reminders.team.deadline|date('D d-M-y') }}, 11:59 PM</strong>. After that only the admin can.
+                        </p>
+                        <div class="list-group list-group-flush mb-2">
+                            {% for person in reminders.team.people %}
+                                <a href="{{ path('quick_entry', {'date': reminders.team.from|date('Y-m-d'), 'user': person.user.id}) }}" class="list-group-item list-group-item-action px-0">
+                                    <div class="fw-bold">{{ person.user.displayName }}</div>
+                                    <div class="small text-secondary">Missing: {{ person.days|join(', ') }}</div>
+                                </a>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary timesheet-reminder-close">Remind Me Later</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var key = {{ key|json_encode|raw }};
+            var seen = false;
+            try { seen = window.sessionStorage.getItem(key) === '1'; } catch (e) {}
+            if (seen) { return; }
+            function open() {
+                var modal = document.getElementById('timesheet-reminder-modal');
+                if (modal === null) { return; }
+                modal.style.display = 'block';
+                modal.classList.add('show');
+                var backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                backdrop.id = 'timesheet-reminder-backdrop';
+                document.body.appendChild(backdrop);
+                function close() {
+                    modal.style.display = 'none';
+                    modal.classList.remove('show');
+                    backdrop.remove();
+                    try { window.sessionStorage.setItem(key, '1'); } catch (e) {}
+                }
+                modal.querySelectorAll('.timesheet-reminder-close').forEach(function (el) { el.addEventListener('click', close); });
+                // following a link counts as seen as well
+                modal.querySelectorAll('a').forEach(function (el) { el.addEventListener('click', function () { try { window.sessionStorage.setItem(key, '1'); } catch (e) {} }); });
+            }
+            if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', open); } else { open(); }
+        })();
+    </script>
+{% endif %}

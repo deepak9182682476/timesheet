@@ -155,6 +155,8 @@ final class QuickEntryController extends AbstractController
 
         // weekly cut-off: the week can no longer be entered by the person looking at it (see WeeklyCutoffService)
         $cutoffMessage = $this->weeklyCutoff->getMessage($this->getUser(), $user, $startWeek);
+        // a week that has not started yet: no future days can be entered (this week's later days are read-only in the page)
+        $cutoffMessage ??= $this->weeklyCutoff->getFutureMessage($user, $startWeek);
         if ($cutoffMessage !== null) {
             $locked = true;
         }

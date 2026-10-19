@@ -42,9 +42,11 @@
             var day = readDate(input);
             var from = self ? cfg.self_from : cfg.team_from;
             var closed = !cfg.admin && day !== null && day < from;
+            // no future days, for everybody (tomorrow and later)
+            var future = day !== null && cfg.until && day > cfg.until;
 
             var notice = row.parentNode.querySelector('.cutoff-notice');
-            if (closed) {
+            if (closed || future) {
                 if (notice === null) {
                     notice = document.createElement('div');
                     notice.className = 'cutoff-notice alert alert-danger d-block mb-3';
@@ -52,13 +54,18 @@
                 }
                 notice.innerHTML = '';
                 var title = document.createElement('strong');
-                title.textContent = 'Cut-off date exceeded.';
+                title.textContent = future ? 'Future date not allowed.' : 'Cut-off date exceeded.';
                 var text = document.createElement('div');
                 // text.textContent = self
                 //     ? 'You should enter each week\'s timesheet by the last day of that week (11:59 PM). Please contact your manager.'
                 //     : 'You cannot enter your employee\'s records for this week any more: managers can enter them until the end of the following week. Please contact the admin.';
-                text.textContent = self
+                text.textContent = future
+                    ? 'You cannot enter time for a future day yet. Time can be entered up to today.'
+                    // own time: the manager can enter it for one more week (team_from); older than that only the admin
+                    : self && day >= cfg.team_from
                     ? 'You should enter each week\'s timesheet by the Monday after it (11:59 PM). Please contact your manager.'
+                    : self
+                    ? 'You should enter each week\'s timesheet by the Monday after it (11:59 PM), and your manager could only enter it until the Monday after that. Please contact the admin.'
                     : 'You cannot enter your employee\'s records for this week any more: managers can enter them until the Monday a week after their own cut-off (11:59 PM). Please contact the admin.';
                 notice.appendChild(title);
                 notice.appendChild(text);
@@ -68,7 +75,7 @@
 
             var holder = form.closest('.modal-content') || form;
             holder.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
-                if (closed) { button.disabled = true; button.dataset.cutoffDisabled = '1'; }
+                if (closed || future) { button.disabled = true; button.dataset.cutoffDisabled = '1'; }
                 else if (button.dataset.cutoffDisabled === '1') { button.disabled = false; delete button.dataset.cutoffDisabled; }
             });
         }

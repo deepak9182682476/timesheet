@@ -107,6 +107,12 @@ final class WeeklyCutoffService
         $week = $start->format('d-M-y') . ' to ' . $end->format('d-M-y');
 
         $own = $end->modify('+' . self::GRACE_DAYS . ' days');
+        // own time: the manager can still enter it during the week after one's own cut-off; after that only the admin
+        $managerUntil = $own->modify('+' . self::MANAGER_DAYS . ' days');
+        if ($problem === self::SELF && new \DateTimeImmutable('now') > $managerUntil) {
+            return 'Cut-off date exceeded: the timesheet for ' . $week . ' had to be entered by ' . $own->format('D d-M-y') . ', 11:59 PM, '
+                . 'and your manager could enter it until ' . $managerUntil->format('D d-M-y') . ', 11:59 PM. Please contact the admin.';
+        }
         if ($problem === self::SELF) {
             // return 'Cut-off date exceeded: the timesheet for ' . $week . ' had to be entered by ' . $end->format('d-M-y') . ', 11:59 PM. '
             //     . 'You should enter each week\'s timesheet by the last day of that week. Please contact your manager.';
@@ -122,9 +128,27 @@ final class WeeklyCutoffService
     }
 
     /**
+     * No time for future days: up to today (in the owner's time zone) only, for everybody.
+     * Null when the day is today or earlier; otherwise the message.
+     */
+    public function getFutureMessage(User $owner, \DateTimeInterface $day, ?\DateTimeInterface $now = null): ?string
+    {
+        $zone = new \DateTimeZone($owner->getTimezone());
+        $now ??= new \DateTimeImmutable('now');
+        $today = \DateTimeImmutable::createFromInterface($now)->setTimezone($zone)->format('Y-m-d');
+        $local = \DateTimeImmutable::createFromInterface($day)->setTimezone($zone);
+        if ($local->format('Y-m-d') <= $today) {
+            return null;
+        }
+
+        return 'Future date not allowed: you cannot enter time for ' . $local->format('D d-M-y') . ' yet. '
+            . 'Time can be entered up to today (' . \DateTimeImmutable::createFromInterface($now)->setTimezone($zone)->format('D d-M-y') . ').';
+    }
+
+    /**
      * For the forms in the browser: the first day that can still be entered, for oneself and for one's people.
      *
-     * @return array{admin: bool, self_from: string, team_from: string, manager_days: int}
+     * @return array{admin: bool, self_from: string, team_from: string, manager_days: int, until: string}
      */
     public function getOpenFrom(User $actor, ?\DateTimeInterface $now = null): array
     {
@@ -154,6 +178,8 @@ final class WeeklyCutoffService
             // 'team_from' => $thisWeek->modify('-' . self::MANAGER_DAYS . ' days')->format('Y-m-d'),
             'team_from' => $openFrom(self::MANAGER_DAYS),
             'manager_days' => self::MANAGER_DAYS,
+            // the last day that can be entered: today (no future days, for everybody)
+            'until' => \DateTimeImmutable::createFromInterface($now)->setTimezone(new \DateTimeZone($actor->getTimezone()))->format('Y-m-d'),
         ];
     }
 }

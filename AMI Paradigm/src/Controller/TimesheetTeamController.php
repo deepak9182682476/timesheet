@@ -119,6 +119,10 @@ final class TimesheetTeamController extends TimesheetAbstractController
                 // one's people's a week later (see WeeklyCutoffService)
                 $cutoffProblems = [];
                 foreach ($allUsers as $user) {
+                    // no future days
+                    if ($entry->getBegin() !== null && ($message = $this->weeklyCutoff->getFutureMessage($user, $entry->getBegin())) !== null) {
+                        $cutoffProblems[] = $message;
+                    }
                     if ($entry->getBegin() !== null && ($message = $this->weeklyCutoff->getMessage($this->getUser(), $user, $entry->getBegin())) !== null) {
                         $cutoffProblems[] = $message;
                     }
